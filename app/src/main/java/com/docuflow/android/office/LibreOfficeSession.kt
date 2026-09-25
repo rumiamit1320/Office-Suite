@@ -1,15 +1,72 @@
 package com.docuflow.android.office
+
+import android.content.Context
 import android.net.Uri
-class LibreOfficeSession: DocumentSession {
- override suspend fun open(uri: Uri)=NativeLibreOffice.open(uri.toString())
- override suspend fun save()=NativeLibreOffice.save()
- override suspend fun close()=NativeLibreOffice.close()
+import java.io.File
+
+class LibreOfficeSession(private val context: Context) : DocumentSession {
+    private var openedFile: File? = null
+
+    suspend fun initialize(): Boolean {
+        val runtimeRoot = File(context.filesDir, "libreoffice")
+        val profile = File(context.filesDir, "lo-profile")
+        runtimeRoot.mkdirs()
+        profile.mkdirs()
+        return NativeLibreOffice.initialize(
+            runtimeRoot.absolutePath,
+            "file:${profile.absolutePath}"
+        )
+    }
+
+    override suspend fun open(uri: Uri) {
+        val file = copyUriToWorkingFile(uri)
+        check(NativeLibreOffice.open(file.absolutePath)) {
+            "LibreOfficeKit could not open ${file.absolutePath}"
+        }
+        openedFile = file
+    }
+
+    override suspend fun save() {
+        val file = openedFile ?: error("No document is open")
+        val format = when (file.extension.lowercase()) {
+            "docx" -> "Office Open XML Text"
+            "xlsx" -> "Calc MS Excel 2007 XML"
+            "pptx" -> "Impress MS PowerPoint 2007 XML"
+            "pdf" -> "pdf"
+            else -> ""
+        }
+        check(NativeLibreOffice.saveAs(file.absolutePath, format)) {
+            "LibreOfficeKit save failed"
+        }
+    }
+
+    override suspend fun close() {
+        NativeLibreOffice.close()
+        openedFile = null
+    }
+
+    private fun copyUriToWorkingFile(uri: Uri): File {
+        val name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: "document"
+        val extension = name.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+        val safeName = "opened_${System.currentTimeMillis()}${extension?.let { ".$it" } ?: ""}"
+        val target = File(context.cacheDir, safeName)
+        context.contentResolver.openInputStream(uri).use { input ->
+            requireNotNull(input) { "Unable to read document URI: $uri" }
+            target.outputStream().use { output -> input.copyTo(output) }
+        }
+        return target
+    }
 }
+
 object NativeLibreOffice {
- init { System.loadLibrary("docuflow-lokit") }
- external fun attach(handle: java.nio.ByteBuffer)
- external fun open(uri:String)
- external fun save()
- external fun close()
- external fun getParts():Int
+    init { System.loadLibrary("docuflow-lokit") }
+
+    external fun isRuntimeAvailable(): Boolean
+    external fun initialize(installPath: String, userProfile: String): Boolean
+    external fun open(uri: String): Boolean
+    external fun saveAs(uri: String, format: String): Boolean
+    external fun close()
+    external fun getParts(): Int
+    external fun getDocumentSize(out: LongArray): Boolean
 }

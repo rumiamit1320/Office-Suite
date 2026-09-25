@@ -43,7 +43,7 @@ jobs:
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER"             "platform-tools"             "platforms;android-35"             "build-tools;35.0.0"             "cmake;4.1.2"             "ndk;30.0.16248370"
+          "$SDKMANAGER"             "platform-tools"             "platforms;android-36"             "build-tools;35.0.0"             "cmake;4.1.2"             "ndk;30.0.16248370"
 
       - uses: gradle/actions/setup-gradle@v4
         with:

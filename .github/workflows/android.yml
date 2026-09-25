@@ -58,7 +58,7 @@ jobs:
           rm -rf /tmp/libreoffice-runtime
           mkdir -p /tmp/libreoffice-runtime
           mkdir -p app/src/main/jniLibs/arm64-v8a
-          mkdir -p app/src/main/assets/libreoffice
+          mkdir -p app/src/main/assets
 
           curl --fail --location --retry 3 --output /tmp/libreoffice.apk "$LO_APK_URL"
 
@@ -66,15 +66,15 @@ jobs:
           unzip -q /tmp/libreoffice.apk 'assets/*' -d /tmp/libreoffice-runtime
 
           cp /tmp/libreoffice-runtime/lib/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
-          cp -R /tmp/libreoffice-runtime/assets/. app/src/main/assets/libreoffice/
+          cp -R /tmp/libreoffice-runtime/assets/. app/src/main/assets/
 
           test -s app/src/main/jniLibs/arm64-v8a/liblo-native-code.so
-          test -d app/src/main/assets/libreoffice
+          test -d app/src/main/assets/program
 
           echo "LibreOfficeKit native runtime:"
           ls -lh app/src/main/jniLibs/arm64-v8a/
           echo "LibreOffice runtime assets:"
-          du -sh app/src/main/assets/libreoffice
+          du -sh app/src/main/assets
 
       - uses: gradle/actions/setup-gradle@v4
         with:

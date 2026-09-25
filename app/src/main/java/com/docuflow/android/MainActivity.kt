@@ -10,9 +10,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+
 class MainActivity:ComponentActivity(){
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{DocuFlowApp()}}
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun DocuFlowApp(){
  MaterialTheme{
   Scaffold(topBar={TopAppBar(title={Text("DocuFlow")})}){p->

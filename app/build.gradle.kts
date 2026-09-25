@@ -6,6 +6,7 @@ plugins {
 android {
     namespace="com.docuflow.android"
     compileSdk=36
+    ndkVersion="27.2.12479018"
     defaultConfig {
         applicationId="com.docuflow.android"
         minSdk=26

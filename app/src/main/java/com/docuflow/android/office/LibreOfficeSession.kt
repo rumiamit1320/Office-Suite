@@ -5,23 +5,29 @@ import android.net.Uri
 import java.io.File
 
 class LibreOfficeSession(private val context: Context) : DocumentSession {
+
+    companion object {
+        private const val RUNTIME_VERSION = "26.2.5.2"
+        private const val ASSET_ROOT = "libreoffice"
+    }
+
     private var openedFile: File? = null
 
     suspend fun initialize(): Boolean {
-        val runtimeRoot = File(context.filesDir, "libreoffice")
+        val runtimeRoot = installBundledRuntime()
         val profile = File(context.filesDir, "lo-profile")
-        runtimeRoot.mkdirs()
         profile.mkdirs()
+
         return NativeLibreOffice.initialize(
             runtimeRoot.absolutePath,
-            "file:${profile.absolutePath}"
+            "file:" + profile.absolutePath
         )
     }
 
     override suspend fun open(uri: Uri) {
         val file = copyUriToWorkingFile(uri)
         check(NativeLibreOffice.open(file.absolutePath)) {
-            "LibreOfficeKit could not open ${file.absolutePath}"
+            "LibreOfficeKit could not open " + file.absolutePath
         }
         openedFile = file
     }
@@ -45,16 +51,62 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
         openedFile = null
     }
 
-    private fun copyUriToWorkingFile(uri: Uri): File {
-        val name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: "document"
-        val extension = name.substringAfterLast('.', "").takeIf { it.isNotBlank() }
-        val safeName = "opened_${System.currentTimeMillis()}${extension?.let { ".$it" } ?: ""}"
-        val target = File(context.cacheDir, safeName)
-        context.contentResolver.openInputStream(uri).use { input ->
-            requireNotNull(input) { "Unable to read document URI: $uri" }
-            target.outputStream().use { output -> input.copyTo(output) }
+    private fun installBundledRuntime(): File {
+        val root = File(context.filesDir, ASSET_ROOT)
+        val marker = File(root, ".runtime-" + RUNTIME_VERSION)
+
+        if (marker.exists()) return root
+
+        if (root.exists()) root.deleteRecursively()
+        root.mkdirs()
+
+        copyAssetTree(ASSET_ROOT, root)
+        marker.writeText(RUNTIME_VERSION)
+        return root
+    }
+
+    private fun copyAssetTree(assetPath: String, destination: File) {
+        val manager = context.assets
+        val children = manager.list(assetPath).orEmpty()
+
+        if (children.isEmpty()) {
+            destination.parentFile?.mkdirs()
+            manager.open(assetPath).use { input ->
+                destination.outputStream().use { output -> input.copyTo(output) }
+            }
+            return
         }
+
+        destination.mkdirs()
+        for (child in children) {
+            copyAssetTree(
+                "$assetPath/$child",
+                File(destination, child)
+            )
+        }
+    }
+
+    private fun copyUriToWorkingFile(uri: Uri): File {
+        val name = uri.lastPathSegment
+            ?.substringAfterLast('/')
+            ?.takeIf { it.isNotBlank() }
+            ?: "document"
+
+        val extension = name.substringAfterLast('.', "")
+            .takeIf { it.isNotBlank() }
+
+        val safeName = "opened_" + System.currentTimeMillis() +
+            (extension?.let { ".$it" } ?: "")
+
+        val target = File(context.cacheDir, safeName)
+
+        context.contentResolver.openInputStream(uri).use { input ->
+            requireNotNull(input) { "Unable to read document URI: " + uri }
+            target.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+
         return target
     }
 }

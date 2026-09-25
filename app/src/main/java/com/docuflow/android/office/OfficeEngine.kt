@@ -1,8 +1,12 @@
 package com.docuflow.android.office
 
 import android.app.Activity
+import android.content.Context
 import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import android.app.Application
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,8 +15,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
-class OfficeEngine {
-    private val session = LibreOfficeSession()
+class OfficeEngine(context: Context) {
+    private val session = LibreOfficeSession(context.applicationContext)
     private var initialized = false
 
     suspend fun initialize(activity: Activity): Boolean {
@@ -36,8 +40,8 @@ data class DocuFlowUiState(
     val documentOpen: Boolean = false
 )
 
-class DocuFlowViewModel : ViewModel() {
-    private val engine = OfficeEngine()
+class DocuFlowViewModel(application: Application) : AndroidViewModel(application) {
+    private val engine = OfficeEngine(application)
     private val _state = MutableStateFlow(DocuFlowUiState())
     val state: StateFlow<DocuFlowUiState> = _state.asStateFlow()
 

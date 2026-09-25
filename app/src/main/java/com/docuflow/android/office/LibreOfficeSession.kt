@@ -26,7 +26,7 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
 
     override suspend fun open(uri: Uri) {
         val file = copyUriToWorkingFile(uri)
-        check(NativeLibreOffice.open(file.absolutePath)) {
+        check(NativeLibreOffice.open(file.toURI().toString())) {
             "LibreOfficeKit could not open " + file.absolutePath
         }
         openedFile = file
@@ -41,7 +41,7 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
             "pdf" -> "pdf"
             else -> ""
         }
-        check(NativeLibreOffice.saveAs(file.absolutePath, format)) {
+        check(NativeLibreOffice.saveAs(file.toURI().toString(), format)) {
             "LibreOfficeKit save failed"
         }
     }

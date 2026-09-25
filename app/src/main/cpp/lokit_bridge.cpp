@@ -59,6 +59,15 @@ static bool hasMember(size_t nSize, size_t offset, size_t memberSize) {
     return nSize >= offset + memberSize;
 }
 
+static std::string jstringToString(JNIEnv* env, jstring value) {
+    if (!value) return {};
+    const char* chars = env->GetStringUTFChars(value, nullptr);
+    if (!chars) return {};
+    std::string result(chars);
+    env->ReleaseStringUTFChars(value, chars);
+    return result;
+}
+
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
     return JNI_VERSION_1_6;
 }

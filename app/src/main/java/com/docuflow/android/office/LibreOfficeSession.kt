@@ -1,33 +1,33 @@
 package com.docuflow.android.office
 
+import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import java.io.File
+import org.libreoffice.kit.LibreOfficeKit
 
 class LibreOfficeSession(private val context: Context) : DocumentSession {
-
-    companion object {
-        private const val RUNTIME_VERSION = "26.2.5.2"
-        private const val ASSET_ROOT = "libreoffice"
-    }
 
     private var openedFile: File? = null
 
     suspend fun initialize(): Boolean {
-        val runtimeRoot = installBundledRuntime()
-        val profile = File(context.filesDir, "lo-profile")
-        profile.mkdirs()
+        val activity = context as? Activity
+            ?: return false
 
-        return NativeLibreOffice.initialize(
-            runtimeRoot.absolutePath,
-            "file:" + profile.absolutePath
-        )
+        if (!LibreOfficeKit.init(activity)) {
+            return false
+        }
+
+        val handle = LibreOfficeKit.getLibreOfficeKitHandle()
+            ?: return false
+
+        return NativeLibreOffice.initialize(handle)
     }
 
     override suspend fun open(uri: Uri) {
         val file = copyUriToWorkingFile(uri)
         check(NativeLibreOffice.open(file.toURI().toString())) {
-            "LibreOfficeKit could not open " + file.absolutePath
+            "LibreOfficeKit could not open " + file.name
         }
         openedFile = file
     }
@@ -49,41 +49,6 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
     override suspend fun close() {
         NativeLibreOffice.close()
         openedFile = null
-    }
-
-    private fun installBundledRuntime(): File {
-        val root = File(context.filesDir, ASSET_ROOT)
-        val marker = File(root, ".runtime-" + RUNTIME_VERSION)
-
-        if (marker.exists()) return root
-
-        if (root.exists()) root.deleteRecursively()
-        root.mkdirs()
-
-        copyAssetTree(ASSET_ROOT, root)
-        marker.writeText(RUNTIME_VERSION)
-        return root
-    }
-
-    private fun copyAssetTree(assetPath: String, destination: File) {
-        val manager = context.assets
-        val children = manager.list(assetPath).orEmpty()
-
-        if (children.isEmpty()) {
-            destination.parentFile?.mkdirs()
-            manager.open(assetPath).use { input ->
-                destination.outputStream().use { output -> input.copyTo(output) }
-            }
-            return
-        }
-
-        destination.mkdirs()
-        for (child in children) {
-            copyAssetTree(
-                "$assetPath/$child",
-                File(destination, child)
-            )
-        }
     }
 
     private fun copyUriToWorkingFile(uri: Uri): File {
@@ -115,7 +80,7 @@ object NativeLibreOffice {
     init { System.loadLibrary("docuflow-lokit") }
 
     external fun isRuntimeAvailable(): Boolean
-    external fun initialize(installPath: String, userProfile: String): Boolean
+    external fun initialize(handle: java.nio.ByteBuffer): Boolean
     external fun open(uri: String): Boolean
     external fun saveAs(uri: String, format: String): Boolean
     external fun close()

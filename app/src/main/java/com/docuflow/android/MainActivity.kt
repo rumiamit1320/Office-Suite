@@ -21,11 +21,18 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val incomingUri = mutableStateOf<Uri?>(null)
+    private val officeEngine by lazy { OfficeEngine(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         incomingUri.value = intent?.data
-        setContent { DocuFlowApp(incomingUri = incomingUri.value) }
+        setContent {
+            DocuFlowApp(
+                activity = this,
+                officeEngine = officeEngine,
+                incomingUri = incomingUri.value
+            )
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -33,44 +40,96 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         incomingUri.value = intent.data
     }
+
+    override fun onDestroy() {
+        // Prevent the process-wide LOKit document from surviving an Activity
+        // recreation and becoming detached from the new UI/session.
+        if (isFinishing || isChangingConfigurations) {
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                runCatching { officeEngine.close() }
+            }
+        }
+        super.onDestroy()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocuFlowApp(incomingUri: Uri?) {
+fun DocuFlowApp(
+    activity: MainActivity,
+    officeEngine: OfficeEngine,
+    incomingUri: Uri?
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val officeEngine = remember { OfficeEngine(context) }
 
     var status by remember { mutableStateOf("Ready") }
-    var isOpening by remember { mutableStateOf(false) }
+    var isBusy by remember { mutableStateOf(false) }
+    var documentOpen by remember { mutableStateOf(false) }
     var lastHandledUri by remember { mutableStateOf<Uri?>(null) }
 
+    suspend fun initializeEngine() {
+        check(officeEngine.initialize(activity)) {
+            "LibreOfficeKit runtime is not available"
+        }
+    }
+
     suspend fun openDocument(uri: Uri) {
-        isOpening = true
+        isBusy = true
         status = "Initializing LibreOfficeKit…"
 
         try {
             try {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
             } catch (_: SecurityException) {
                 // Some document providers grant a non-persistable one-shot permission.
             }
 
-            check(officeEngine.initialize()) {
-                "LibreOfficeKit runtime is not available"
-            }
+            initializeEngine()
 
             status = "Opening document…"
             officeEngine.open(uri)
+            documentOpen = true
             status = "Document opened"
         } catch (e: Exception) {
+            documentOpen = false
             status = "Open failed: ${e.message ?: e.javaClass.simpleName}"
         } finally {
-            isOpening = false
+            isBusy = false
+        }
+    }
+
+    fun saveDocument() {
+        scope.launch {
+            isBusy = true
+            status = "Saving…"
+            try {
+                officeEngine.save()
+                status = "Document saved"
+            } catch (e: Exception) {
+                status = "Save failed: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                isBusy = false
+            }
+        }
+    }
+
+    fun closeDocument() {
+        scope.launch {
+            isBusy = true
+            status = "Closing…"
+            try {
+                officeEngine.close()
+                documentOpen = false
+                status = "Document closed"
+            } catch (e: Exception) {
+                status = "Close failed: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                isBusy = false
+            }
         }
     }
 
@@ -120,10 +179,28 @@ fun DocuFlowApp(incomingUri: Uri?) {
                 Spacer(Modifier.height(20.dp))
 
                 Button(
-                    enabled = !isOpening,
+                    enabled = !isBusy,
                     onClick = { documentPicker.launch(arrayOf("*/*")) }
                 ) {
-                    Text(if (isOpening) "Opening…" else "Open document")
+                    Text(if (isBusy) "Working…" else "Open document")
+                }
+
+                if (documentOpen) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(
+                            enabled = !isBusy,
+                            onClick = { saveDocument() }
+                        ) {
+                            Text("Save")
+                        }
+                        OutlinedButton(
+                            enabled = !isBusy,
+                            onClick = { closeDocument() }
+                        ) {
+                            Text("Close")
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))

@@ -19,9 +19,18 @@ struct DocClass;
 struct LibreOfficeKit { OfficeClass* pClass; };
 struct LibreOfficeKitDocument { DocClass* pClass; };
 
-/* Exact LibreOffice 26.x document class layout through the members used here.
- * getPartName() and setPartMode() MUST be present; otherwise later function
- * pointers are shifted and opening a document can crash the process. */
+/* LibreOfficeKit C ABI layout.
+ *
+ * IMPORTANT: these function pointers are an ABI table, not a normal C++
+ * vtable. Their order must exactly match LibreOfficeKitDocumentClassStruct.
+ * In particular the order is:
+ * getParts, getPartPageRectangles, getPart, setPart, getPartName,
+ * setPartMode, paintTile, getTileMode, getDocumentSize,
+ * initializeForRendering.
+ *
+ * We intentionally stop using the rendering API here. Document opening does
+ * not require initializeForRendering(), and avoiding it gives the Android
+ * front-end a minimal, stable open path. */
 struct OfficeClass {
     size_t nSize;
     void (*destroy)(Office);
@@ -38,8 +47,6 @@ struct DocClass {
     char* (*getPartPageRectangles)(Doc);
     char* (*getPartName)(Doc, int);
     void (*setPartMode)(Doc, int);
-    int (*getPart)(Doc);
-    void (*setPart)(Doc, int);
     void (*paintTile)(Doc, unsigned char*, int, int, int, int, int, int);
     int (*getTileMode)(Doc);
     void (*getDocumentSize)(Doc, long*, long*);
@@ -143,13 +150,10 @@ Java_com_docuflow_android_office_NativeLibreOffice_open(
     const size_t nSize = gDocument->pClass->nSize;
     LOGI("Document loaded, class size=%zu", nSize);
 
-    if (hasMember(nSize, offsetof(DocClass, initializeForRendering),
-                  sizeof(gDocument->pClass->initializeForRendering)) &&
-        gDocument->pClass->initializeForRendering) {
-        gDocument->pClass->initializeForRendering(gDocument, "{}");
-    }
-
-    LOGI("Document opened");
+    /* Do not call initializeForRendering() yet. The UI currently only needs a
+     * successfully loaded document; rendering can be added after the open
+     * path is verified independently. */
+    LOGI("Document opened successfully");
     return JNI_TRUE;
 }
 

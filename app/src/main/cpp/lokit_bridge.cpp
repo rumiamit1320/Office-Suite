@@ -1,6 +1,5 @@
 #include <jni.h>
 #include <android/log.h>
-#include <dlfcn.h>
 #include <string>
 #include <cstddef>
 
@@ -53,32 +52,11 @@ struct DocClass {
     void (*initializeForRendering)(Doc, const char*);
 };
 
-static void* gLoHandle = nullptr;
 static Office gOffice = nullptr;
 static Doc gDocument = nullptr;
 
 static bool hasMember(size_t nSize, size_t offset, size_t memberSize) {
     return nSize >= offset + memberSize;
-}
-
-static bool ensureRuntimeLoaded() {
-    if (gLoHandle) return true;
-    dlerror();
-    gLoHandle = dlopen("liblo-native-code.so", RTLD_NOW | RTLD_GLOBAL);
-    if (!gLoHandle) {
-        LOGE("liblo-native-code.so not loaded: %s", dlerror());
-        return false;
-    }
-    LOGI("Loaded liblo-native-code.so");
-    return true;
-}
-
-static std::string jstringToString(JNIEnv* env, jstring value) {
-    if (!value) return {};
-    const char* chars = env->GetStringUTFChars(value, nullptr);
-    std::string result = chars ? chars : "";
-    if (chars) env->ReleaseStringUTFChars(value, chars);
-    return result;
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
@@ -87,37 +65,29 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM*, void*) {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_docuflow_android_office_NativeLibreOffice_isRuntimeAvailable(JNIEnv*, jobject) {
-    return ensureRuntimeLoaded() ? JNI_TRUE : JNI_FALSE;
+    return gOffice ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_docuflow_android_office_NativeLibreOffice_initialize(
-        JNIEnv* env, jobject, jstring installPath, jstring userProfile) {
+        JNIEnv* env, jobject, jobject handleBuffer) {
     if (gOffice && gOffice->pClass) return JNI_TRUE;
-    if (!ensureRuntimeLoaded()) return JNI_FALSE;
+    if (!handleBuffer) return JNI_FALSE;
 
-    dlerror();
-    void* symbol = dlsym(gLoHandle, "libreofficekit_hook_2");
-    const char* error = dlerror();
-    if (!symbol || error) {
-        LOGE("libreofficekit_hook_2 not found: %s", error ? error : "unknown");
+    void* address = env->GetDirectBufferAddress(handleBuffer);
+    if (!address) {
+        LOGE("LibreOfficeKit handle is not a direct ByteBuffer");
         return JNI_FALSE;
     }
 
-    const std::string install = jstringToString(env, installPath);
-    const std::string profile = jstringToString(env, userProfile);
-    LOGI("Initializing LOK: install=%s profile=%s", install.c_str(), profile.c_str());
-
-    Hook2 hook = reinterpret_cast<Hook2>(symbol);
-    gOffice = hook(install.c_str(), profile.empty() ? nullptr : profile.c_str());
-
-    if (!gOffice || !gOffice->pClass) {
-        LOGE("LibreOfficeKit initialization failed");
+    gOffice = reinterpret_cast<Office>(address);
+    if (!gOffice || !gOffice->pClass || gOffice->pClass->nSize < sizeof(size_t)) {
+        LOGE("Invalid LibreOfficeKit handle");
         gOffice = nullptr;
         return JNI_FALSE;
     }
 
-    LOGI("LibreOfficeKit initialized, class size=%zu", gOffice->pClass->nSize);
+    LOGI("LibreOfficeKit handle attached, class size=%zu", gOffice->pClass->nSize);
     return JNI_TRUE;
 }
 

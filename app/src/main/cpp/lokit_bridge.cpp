@@ -13,6 +13,15 @@ using Office = LibreOfficeKit*;
 using Doc = LibreOfficeKitDocument*;
 using Hook2 = Office (*)(const char*, const char*);
 
+struct OfficeClass; 
+struct DocClass;
+
+// LibreOfficeKit exposes its class table through the first field of the opaque
+// handle. The previous code only forward-declared these structs, which made
+// member access invalid in C++. Keep the ABI-compatible first field explicit.
+struct LibreOfficeKit { OfficeClass* pClass; };
+struct LibreOfficeKitDocument { DocClass* pClass; };
+
 struct OfficeClass {
     size_t nSize;
     void (*destroy)(Office);

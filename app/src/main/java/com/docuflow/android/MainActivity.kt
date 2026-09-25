@@ -28,10 +28,10 @@ class MainActivity : ComponentActivity() {
         setContent { DocuFlowApp(incomingUri = incomingUri.value) }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        incomingUri.value = intent?.data
+        incomingUri.value = intent.data
     }
 }
 

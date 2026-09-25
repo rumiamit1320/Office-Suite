@@ -45,6 +45,37 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER"             "platform-tools"             "platforms;android-36"             "build-tools;35.0.0"             "cmake;4.1.2"             "ndk;27.2.12479018"
 
+      - name: Prepare LibreOfficeKit Android runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # F-Droid's arm64-v8a LibreOffice Viewer build is a reproducible
+          # Android LibreOfficeKit runtime. We package its LibreOffice core
+          # and assets into DocuFlow rather than relying on another app.
+          LO_APK_URL="https://f-droid.org/repo/org.documentfoundation.libreoffice_123.apk"
+
+          rm -rf /tmp/libreoffice-runtime
+          mkdir -p /tmp/libreoffice-runtime
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          mkdir -p app/src/main/assets/libreoffice
+
+          curl --fail --location --retry 3 --output /tmp/libreoffice.apk "$LO_APK_URL"
+
+          unzip -q /tmp/libreoffice.apk 'lib/arm64-v8a/*' -d /tmp/libreoffice-runtime
+          unzip -q /tmp/libreoffice.apk 'assets/*' -d /tmp/libreoffice-runtime
+
+          cp /tmp/libreoffice-runtime/lib/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          cp -R /tmp/libreoffice-runtime/assets/. app/src/main/assets/libreoffice/
+
+          test -s app/src/main/jniLibs/arm64-v8a/liblo-native-code.so
+          test -d app/src/main/assets/libreoffice
+
+          echo "LibreOfficeKit native runtime:"
+          ls -lh app/src/main/jniLibs/arm64-v8a/
+          echo "LibreOffice runtime assets:"
+          du -sh app/src/main/assets/libreoffice
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"

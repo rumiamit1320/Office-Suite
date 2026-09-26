@@ -68,7 +68,11 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
     private var viewportHeightPx = 1200
     private var twipsPerPixel = 12.0
 
-    fun zoomIn() { twipsPerPixel = max(5.0, twipsPerPixel * 0.85); refreshViewport() }\n\n    fun zoomOut() { twipsPerPixel = min(30.0, twipsPerPixel * 1.18); refreshViewport() }\n\n    fun setViewportSize(width: Int, height: Int) {
+    fun zoomIn() { twipsPerPixel = max(5.0, twipsPerPixel * 0.85); refreshViewport() }
+
+    fun zoomOut() { twipsPerPixel = min(30.0, twipsPerPixel * 1.18); refreshViewport() }
+
+    fun setViewportSize(width: Int, height: Int) {
         if (width > 0) viewportWidthPx = width
         if (height > 0) viewportHeightPx = height
         if (_state.value.documentOpen) refreshViewport()

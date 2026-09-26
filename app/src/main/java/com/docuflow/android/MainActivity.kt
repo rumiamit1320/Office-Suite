@@ -9,12 +9,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -68,7 +73,7 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
 
     MaterialTheme {
         Scaffold(topBar = { TopAppBar(title = { Text("DocuFlow") }) }) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Column(Modifier.fillMaxSize().padding(padding).padding(24.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
                 Icon(Icons.Default.FolderOpen, "Open document", Modifier.size(64.dp))
                 Spacer(Modifier.height(16.dp))
                 Text("Office Suite", style = MaterialTheme.typography.headlineMedium)
@@ -84,6 +89,15 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(uiState.status, style = MaterialTheme.typography.bodyMedium)
+                uiState.preview?.let { bitmap ->
+                    Spacer(Modifier.height(20.dp))
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Document preview",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = ContentScale.FillWidth
+                    )
+                }
             }
         }
     }

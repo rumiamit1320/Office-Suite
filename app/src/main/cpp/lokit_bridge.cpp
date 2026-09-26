@@ -1,6 +1,9 @@
 #include <jni.h>
 #include <android/log.h>
 #include <string>
+#include <vector>
+#include <algorithm>
+#define LOK_USE_UNSTABLE_API
 #include "LibreOfficeKit.h"
 
 #define LOG_TAG "DocuFlowLOKit"
@@ -101,8 +104,78 @@ Java_com_docuflow_android_office_NativeLibreOffice_open(JNIEnv* env, jobject, js
         return JNI_FALSE;
     }
 
+    if (LIBREOFFICEKIT_DOCUMENT_HAS(gDocument, initializeForRendering) &&
+        gDocument->pClass->initializeForRendering) {
+        gDocument->pClass->initializeForRendering(gDocument, nullptr);
+        LOGI("Document initialized for tiled rendering");
+    } else {
+        LOGE("Loaded document does not expose initializeForRendering");
+        gDocument->pClass->destroy(gDocument);
+        gDocument = nullptr;
+        return JNI_FALSE;
+    }
+
+    if (!LIBREOFFICEKIT_DOCUMENT_HAS(gDocument, paintTile) ||
+        !gDocument->pClass->paintTile ||
+        !LIBREOFFICEKIT_DOCUMENT_HAS(gDocument, getDocumentSize) ||
+        !gDocument->pClass->getDocumentSize) {
+        LOGE("Loaded document does not expose tiled rendering API");
+        gDocument->pClass->destroy(gDocument);
+        gDocument = nullptr;
+        return JNI_FALSE;
+    }
+
     LOGI("Document loaded successfully; class size=%zu", gDocument->pClass->nSize);
     return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_docuflow_android_office_NativeLibreOffice_render(JNIEnv* env, jobject,
+                                                          jint canvasWidth,
+                                                          jint canvasHeight) {
+    if (!gDocument || !gDocument->pClass ||
+        !LIBREOFFICEKIT_DOCUMENT_HAS(gDocument, paintTile) ||
+        !gDocument->pClass->paintTile ||
+        !LIBREOFFICEKIT_DOCUMENT_HAS(gDocument, getDocumentSize) ||
+        !gDocument->pClass->getDocumentSize) return nullptr;
+
+    if (canvasWidth <= 0 || canvasHeight <= 0 || canvasWidth > 4096 || canvasHeight > 4096)
+        return nullptr;
+
+    long documentWidth = 0;
+    long documentHeight = 0;
+    gDocument->pClass->getDocumentSize(gDocument, &documentWidth, &documentHeight);
+    if (documentWidth <= 0 || documentHeight <= 0) return nullptr;
+
+    const double pixelsPerTwip =
+        static_cast<double>(canvasWidth) / static_cast<double>(documentWidth);
+    long tileHeight = static_cast<long>(canvasHeight / pixelsPerTwip);
+    tileHeight = std::max<long>(1, std::min<long>(documentHeight, tileHeight));
+
+    std::vector<unsigned char> pixels(
+        static_cast<size_t>(canvasWidth) * static_cast<size_t>(canvasHeight) * 4, 0);
+
+    gDocument->pClass->paintTile(
+        gDocument, pixels.data(), canvasWidth, canvasHeight, 0, 0,
+        static_cast<int>(std::min<long>(documentWidth, 0x7fffffffL)),
+        static_cast<int>(std::min<long>(tileHeight, 0x7fffffffL)));
+
+    int tileMode = LOK_TILEMODE_BGRA;
+    if (LIBREOFFICEKIT_DOCUMENT_HAS(gDocument, getTileMode) &&
+        gDocument->pClass->getTileMode)
+        tileMode = gDocument->pClass->getTileMode(gDocument);
+
+    if (tileMode == LOK_TILEMODE_RGBA) {
+        for (size_t i = 0; i + 3 < pixels.size(); i += 4)
+            std::swap(pixels[i], pixels[i + 2]);
+    }
+
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(pixels.size()));
+    if (!result) return nullptr;
+    env->SetByteArrayRegion(result, 0, static_cast<jsize>(pixels.size()),
+                            reinterpret_cast<const jbyte*>(pixels.data()));
+    LOGI("Rendered %dx%d document tile; mode=%d", canvasWidth, canvasHeight, tileMode);
+    return result;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

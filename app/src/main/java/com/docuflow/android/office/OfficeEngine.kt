@@ -2,6 +2,7 @@ package com.docuflow.android.office
 
 import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
@@ -26,6 +27,9 @@ class OfficeEngine(context: Context) {
     suspend fun open(uri: Uri) =
         withContext(NativeOfficeDispatcher.dispatcher) { session.open(uri) }
 
+    suspend fun renderPreview(width: Int, height: Int): Bitmap =
+        withContext(NativeOfficeDispatcher.dispatcher) { session.renderPreview(width, height) }
+
     suspend fun save() =
         withContext(NativeOfficeDispatcher.dispatcher) { session.save() }
 
@@ -36,7 +40,8 @@ class OfficeEngine(context: Context) {
 data class DocuFlowUiState(
     val status: String = "Ready",
     val isBusy: Boolean = false,
-    val documentOpen: Boolean = false
+    val documentOpen: Boolean = false,
+    val preview: Bitmap? = null
 )
 
 class DocuFlowViewModel(application: Application) : AndroidViewModel(application) {
@@ -52,9 +57,16 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
                 check(engine.initialize(activity)) { "LibreOfficeKit runtime is not available" }
                 _state.value = _state.value.copy(status = "Opening document…")
                 engine.open(uri)
-                _state.value = _state.value.copy(status = "Document opened", isBusy = false, documentOpen = true)
+                _state.value = _state.value.copy(status = "Rendering document…")
+                val preview = engine.renderPreview(1080, 1500)
+                _state.value = _state.value.copy(
+                    status = "Document opened",
+                    isBusy = false,
+                    documentOpen = true,
+                    preview = preview
+                )
             } catch (e: Exception) {
-                _state.value = _state.value.copy(status = "Open failed: ${e.message ?: e.javaClass.simpleName}", isBusy = false, documentOpen = false)
+                _state.value = _state.value.copy(status = "Open failed: ${e.message ?: e.javaClass.simpleName}", isBusy = false, documentOpen = false, preview = null)
             }
         }
     }
@@ -78,7 +90,7 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
             _state.value = _state.value.copy(status = "Closing…", isBusy = true)
             try {
                 engine.close()
-                _state.value = _state.value.copy(status = "Document closed", isBusy = false, documentOpen = false)
+                _state.value = _state.value.copy(status = "Document closed", isBusy = false, documentOpen = false, preview = null)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(status = "Close failed: ${e.message ?: e.javaClass.simpleName}", isBusy = false)
             }

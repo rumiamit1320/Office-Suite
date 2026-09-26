@@ -206,7 +206,11 @@ private class DocumentEditorView(
         }
     }
 }
-private data class EditorAction(val label: String, val command: String)
+private data class EditorAction(
+    val label: String,
+    val command: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector? = null
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -242,38 +246,38 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
     }
 
     val frequentTop = listOf(
-        EditorAction("Undo", ".uno:Undo"),
-        EditorAction("Redo", ".uno:Redo"),
-        EditorAction("B", ".uno:Bold"),
-        EditorAction("I", ".uno:Italic"),
-        EditorAction("U", ".uno:Underline"),
-        EditorAction("Filter", ".uno:DataFilterAutoFilter"),
-        EditorAction("Sort", ".uno:DataSort"),
-        EditorAction("Merge", ".uno:MergeCells"),
-        EditorAction("Border", ".uno:BorderDialog")
+        EditorAction("Undo", ".uno:Undo", Icons.Default.Undo),
+        EditorAction("Redo", ".uno:Redo", Icons.Default.Redo),
+        EditorAction("Bold", ".uno:Bold", Icons.Default.FormatBold),
+        EditorAction("Italic", ".uno:Italic", Icons.Default.FormatItalic),
+        EditorAction("Underline", ".uno:Underline", Icons.Default.FormatUnderlined),
+        EditorAction("Filter", ".uno:DataFilterAutoFilter", Icons.Default.FilterAlt),
+        EditorAction("Sort", ".uno:DataSort", Icons.Default.Sort),
+        EditorAction("Merge", ".uno:MergeCells", Icons.Default.MergeType),
+        EditorAction("Border", ".uno:BorderDialog", Icons.Default.BorderAll)
     )
 
     val formattingActions = listOf(
-        EditorAction("Font", ".uno:FontDialog"),
-        EditorAction("Font size", ".uno:FontHeight"),
-        EditorAction("Font colour", ".uno:FontColor"),
-        EditorAction("Cell fill", ".uno:BackgroundColor"),
-        EditorAction("Borders", ".uno:BorderDialog"),
-        EditorAction("Merge cells", ".uno:MergeCells"),
-        EditorAction("Wrap text", ".uno:WrapText"),
-        EditorAction("Align left", ".uno:AlignLeft"),
-        EditorAction("Align center", ".uno:AlignCenter"),
-        EditorAction("Align right", ".uno:AlignRight")
+        EditorAction("Font", ".uno:FontDialog", Icons.Default.TextFields),
+        EditorAction("Font size", ".uno:FontHeight", Icons.Default.TextFields),
+        EditorAction("Font colour", ".uno:FontColor", Icons.Default.FormatColorText),
+        EditorAction("Cell fill", ".uno:BackgroundColor", Icons.Default.FormatColorFill),
+        EditorAction("Borders", ".uno:BorderDialog", Icons.Default.BorderAll),
+        EditorAction("Merge cells", ".uno:MergeCells", Icons.Default.MergeType),
+        EditorAction("Wrap text", ".uno:WrapText", Icons.Default.WrapText),
+        EditorAction("Align left", ".uno:AlignLeft", Icons.Default.FormatAlignLeft),
+        EditorAction("Align center", ".uno:AlignCenter", Icons.Default.FormatAlignCenter),
+        EditorAction("Align right", ".uno:AlignRight", Icons.Default.FormatAlignRight)
     )
 
     val dataActions = listOf(
-        EditorAction("Filter / AutoFilter", ".uno:DataFilterAutoFilter"),
-        EditorAction("Sort", ".uno:DataSort"),
-        EditorAction("Clear filter", ".uno:DataFilterRemoveFilter"),
-        EditorAction("Insert row", ".uno:InsertRows"),
-        EditorAction("Delete row", ".uno:DeleteRows"),
-        EditorAction("Insert column", ".uno:InsertColumns"),
-        EditorAction("Delete column", ".uno:DeleteColumns")
+        EditorAction("Filter / AutoFilter", ".uno:DataFilterAutoFilter", Icons.Default.FilterAlt),
+        EditorAction("Sort", ".uno:DataSort", Icons.Default.Sort),
+        EditorAction("Clear filter", ".uno:DataFilterRemoveFilter", Icons.Default.FilterAlt),
+        EditorAction("Insert row", ".uno:InsertRows", Icons.Default.Add),
+        EditorAction("Delete row", ".uno:DeleteRows", Icons.Default.Delete),
+        EditorAction("Insert column", ".uno:InsertColumns", Icons.Default.Add),
+        EditorAction("Delete column", ".uno:DeleteColumns", Icons.Default.Delete)
     )
 
     ModalNavigationDrawer(
@@ -405,7 +409,7 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                                 )
                             },
                             update = { view ->
-                                view.setBitmap(uiState.preview)
+                                view.setFrame(uiState.preview, uiState.viewportXTwips, uiState.viewportYTwips, uiState.renderOriginXTwips, uiState.renderOriginYTwips, 12.0)
                                 view.post {
                                     if (view.width > 0 && view.height > 0) {
                                         viewModel.setViewportSize(view.width, view.height)

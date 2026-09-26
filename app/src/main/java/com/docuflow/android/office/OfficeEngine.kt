@@ -58,7 +58,8 @@ data class DocuFlowUiState(
     val viewportXTwips: Long = 0L,
     val viewportYTwips: Long = 0L,
     val renderOriginXTwips: Long = 0L,
-    val renderOriginYTwips: Long = 0L
+    val renderOriginYTwips: Long = 0L,
+    val twipsPerPixel: Double = 12.0
 )
 
 class DocuFlowViewModel(application: Application) : AndroidViewModel(application) {
@@ -78,11 +79,13 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
 
     fun zoomIn() {
         twipsPerPixel = max(5.0, twipsPerPixel * 0.85)
+        _state.value = _state.value.copy(twipsPerPixel = twipsPerPixel)
         refreshViewport(force = true)
     }
 
     fun zoomOut() {
         twipsPerPixel = min(30.0, twipsPerPixel * 1.18)
+        _state.value = _state.value.copy(twipsPerPixel = twipsPerPixel)
         refreshViewport(force = true)
     }
 

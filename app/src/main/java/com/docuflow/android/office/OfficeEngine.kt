@@ -3,26 +3,25 @@ package com.docuflow.android.office
 import android.app.Activity
 import android.content.Context
 import android.net.Uri
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 class OfficeEngine(context: Context) {
     private val session = LibreOfficeSession(context.applicationContext)
     private var initialized = false
 
-    suspend fun initialize(activity: Activity): Boolean {
-        if (initialized) return true
-        return session.initialize(activity).also { initialized = it }
-    }
+    suspend fun initialize(activity: Activity): Boolean =
+        withContext(NativeOfficeDispatcher.dispatcher) {
+            if (initialized) return@withContext true
+            session.initialize(activity).also { initialized = it }
+        }
 
     suspend fun open(uri: Uri) =
         withContext(NativeOfficeDispatcher.dispatcher) { session.open(uri) }
@@ -87,7 +86,11 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
     }
 
     override fun onCleared() {
-        runBlocking { runCatching { engine.close() } }
+        // Never block the main thread during ViewModel teardown. The single-threaded
+        // dispatcher preserves native call ordering and queues the close safely.
+        CoroutineScope(NativeOfficeDispatcher.dispatcher).launch {
+            runCatching { engine.close() }
+        }
         super.onCleared()
     }
 }

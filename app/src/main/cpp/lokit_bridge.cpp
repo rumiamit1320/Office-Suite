@@ -5,6 +5,7 @@
 #include <algorithm>
 #define LOK_USE_UNSTABLE_API
 #include "LibreOfficeKit.h"
+#include "LibreOfficeKitEnums.h"
 
 #define LOG_TAG "DocuFlowLOKit"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)

@@ -20,16 +20,41 @@ import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.MergeType
+import androidx.compose.material.icons.filled.BorderAll
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.FormatAlignLeft
+import androidx.compose.material.icons.filled.FormatAlignCenter
+import androidx.compose.material.icons.filled.FormatAlignRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.FormatColorText
+import androidx.compose.material.icons.filled.FormatColorFill
+import androidx.compose.material.icons.filled.WrapText
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.docuflow.android.office.DocuFlowViewModel
@@ -61,10 +86,12 @@ private class DocumentEditorView(
     private val onDelete: () -> Unit
 ) : View(context) {
     private var bitmap: Bitmap? = null
-    private var downX = 0f
-    private var downY = 0f
+    private var frameOffsetX = 0f
+    private var frameOffsetY = 0f
     private var dragOffsetX = 0f
     private var dragOffsetY = 0f
+    private var downX = 0f
+    private var downY = 0f
     private var moved = false
     private var lastTapTime = 0L
     private var lastTapX = 0f
@@ -74,19 +101,24 @@ private class DocumentEditorView(
         isFocusable = true
         isFocusableInTouchMode = true
         setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        setBackgroundColor(0xFFEFEFEF.toInt())
+        setBackgroundColor(0xFFF7F7F8.toInt())
     }
 
-    fun setBitmap(value: Bitmap?) {
+    fun setFrame(value: Bitmap?, viewportXTwips: Long, viewportYTwips: Long, originXTwips: Long, originYTwips: Long, twipsPerPixel: Double) {
+        val newOffsetX = -((viewportXTwips - originXTwips) / twipsPerPixel).toFloat()
+        val newOffsetY = -((viewportYTwips - originYTwips) / twipsPerPixel).toFloat()
+        val changed = bitmap !== value || frameOffsetX != newOffsetX || frameOffsetY != newOffsetY
         bitmap = value
+        frameOffsetX = newOffsetX
+        frameOffsetY = newOffsetY
         dragOffsetX = 0f
         dragOffsetY = 0f
-        invalidate()
+        if (changed) invalidate()
     }
 
     override fun onDraw(canvas: android.graphics.Canvas) {
         super.onDraw(canvas)
-        bitmap?.let { canvas.drawBitmap(it, dragOffsetX, dragOffsetY, null) }
+        bitmap?.let { canvas.drawBitmap(it, frameOffsetX + dragOffsetX, frameOffsetY + dragOffsetY, null) }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -98,26 +130,35 @@ private class DocumentEditorView(
                 dragOffsetX = 0f
                 dragOffsetY = 0f
                 moved = false
+                parent.requestDisallowInterceptTouchEvent(true)
                 return true
             }
-
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.x - downX
                 val dy = event.y - downY
-                if (abs(dx) > 8f || abs(dy) > 8f) moved = true
-                if (moved) {
-                    dragOffsetX = dx
-                    dragOffsetY = dy
-                    invalidate()
-                }
+                if (!moved && abs(dx) <= 8f && abs(dy) <= 8f) return true
+                moved = true
+                dragOffsetX = dx
+                dragOffsetY = dy
+                invalidate()
                 return true
             }
-
+            MotionEvent.ACTION_CANCEL -> {
+                dragOffsetX = 0f
+                dragOffsetY = 0f
+                invalidate()
+                parent.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
             MotionEvent.ACTION_UP -> {
+                parent.requestDisallowInterceptTouchEvent(false)
                 if (moved) {
-                    // Commit the final viewport only once. During the gesture the existing
-                    // bitmap is translated locally, avoiding a LibreOffice render per MOVE.
-                    onPan(-dragOffsetX, -dragOffsetY)
+                    val dx = dragOffsetX
+                    val dy = dragOffsetY
+                    dragOffsetX = 0f
+                    dragOffsetY = 0f
+                    onPan(-dx, -dy)
+                    invalidate()
                 } else {
                     val now = event.eventTime
                     val doubleTap = now - lastTapTime <= 350L &&
@@ -128,7 +169,6 @@ private class DocumentEditorView(
                     lastTapX = event.x
                     lastTapY = event.y
                     onTap(event.x, event.y, count)
-
                     val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
                 }
@@ -139,29 +179,21 @@ private class DocumentEditorView(
         return true
     }
 
-    override fun performClick(): Boolean {
-        super.performClick()
-        return true
-    }
-
+    override fun performClick(): Boolean { super.performClick(); return true }
     override fun onCheckIsTextEditor(): Boolean = true
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
-            InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
         return object : BaseInputConnection(this, false) {
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 text?.toString()?.takeIf { it.isNotEmpty() }?.let(onText)
                 return true
             }
-
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
                 if (beforeLength > 0) onDelete()
                 return true
             }
-
             override fun sendKeyEvent(event: KeyEvent): Boolean {
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     when (event.keyCode) {
@@ -174,7 +206,6 @@ private class DocumentEditorView(
         }
     }
 }
-
 private data class EditorAction(val label: String, val command: String)
 
 @OptIn(ExperimentalMaterial3Api::class)

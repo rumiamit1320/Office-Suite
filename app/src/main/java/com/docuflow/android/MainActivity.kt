@@ -497,7 +497,7 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                             }
                         },
                         navigationIcon = {
-                            if (uiState.documentOpen) {
+                            if (uiState.documentOpen && uiState.documentKind != DocumentKind.PDF) {
                                 IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                     Icon(Icons.Default.Menu, "Tools")
                                 }
@@ -584,7 +584,10 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Edit", style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        if (uiState.documentKind == DocumentKind.PDF) "PDF" else "Edit",
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
                                     Spacer(Modifier.width(8.dp))
                                     Text(uiState.status,
                                         style = MaterialTheme.typography.labelSmall,

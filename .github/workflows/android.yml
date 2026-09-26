@@ -53,7 +53,7 @@ jobs:
           # F-Droid's arm64-v8a LibreOffice Viewer build is a reproducible
           # Android LibreOfficeKit runtime. We package its LibreOffice core
           # and assets into DocuFlow rather than relying on another app.
-          LO_APK_URL="https://f-droid.org/repo/org.documentfoundation.libreoffice_123.apk"
+          LO_APK_URL="https://f-droid.org/repo/org.documentfoundation.libreoffice_131.apk"
 
           rm -rf /tmp/libreoffice-runtime
           mkdir -p /tmp/libreoffice-runtime
@@ -75,6 +75,40 @@ jobs:
           ls -lh app/src/main/jniLibs/arm64-v8a/
           echo "LibreOffice runtime assets:"
           du -sh app/src/main/assets
+
+          # Android 15+ devices may use 16 KiB memory pages. Reject any bundled
+          # ELF shared object whose LOAD segment alignment is below 16 KiB.
+          echo "Checking native libraries for 16 KiB ELF LOAD alignment..."
+          if command -v llvm-readelf >/dev/null 2>&1; then
+            READ_ELF="llvm-readelf"
+          elif command -v readelf >/dev/null 2>&1; then
+            READ_ELF="readelf"
+          else
+            echo "ERROR: no ELF reader available"
+            exit 1
+          fi
+
+          while IFS= read -r so; do
+            bad_alignment="$("$READ_ELF" -lW "$so" | awk '$1=="LOAD" {print $NF}' | awk '
+              function hex2dec(v) { return strtonum(v) }
+              BEGIN { bad=0 }
+              {
+                v=$1
+                if (v ~ /^0x/) {
+                  n=strtonum(v)
+                  if (n < 0x4000) bad=1
+                }
+              }
+              END { print bad }
+            ')"
+            if [ "$bad_alignment" = "1" ]; then
+              echo "ERROR: 16 KiB alignment check failed: $so"
+              "$READ_ELF" -lW "$so" | grep ' LOAD ' || true
+              exit 1
+            fi
+          done < <(find app/src/main/jniLibs -type f -name '*.so' -print)
+
+          echo "16 KiB ELF alignment check passed."
 
       - uses: gradle/actions/setup-gradle@v4
         with:

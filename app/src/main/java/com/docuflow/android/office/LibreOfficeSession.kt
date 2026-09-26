@@ -43,6 +43,17 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
         sourceExtension = file.extension.lowercase()
     }
 
+    suspend fun renderPreview(width: Int, height: Int): Bitmap {
+        val bytes = NativeLibreOffice.render(width, height)
+            ?: error("LibreOfficeKit returned no rendered tile")
+        require(bytes.size == width * height * 4) {
+            "Unexpected rendered buffer size: ${bytes.size}"
+        }
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(bytes))
+        return bitmap
+    }
+
     override suspend fun save() {
         val file = openedFile ?: error("No document is open")
         val uri = sourceUri ?: error("No source URI is associated with the document")
@@ -194,6 +205,7 @@ object NativeLibreOffice {
     external fun isRuntimeAvailable(): Boolean
     external fun initialize(handle: java.nio.ByteBuffer): Boolean
     external fun open(uri: String): Boolean
+    external fun render(width: Int, height: Int): ByteArray?
     external fun saveAs(uri: String, format: String?): Boolean
     external fun close()
 }

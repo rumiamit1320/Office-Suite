@@ -56,7 +56,9 @@ data class DocuFlowUiState(
     val documentWidthTwips: Long = 0L,
     val documentHeightTwips: Long = 0L,
     val viewportXTwips: Long = 0L,
-    val viewportYTwips: Long = 0L
+    val viewportYTwips: Long = 0L,
+    val renderOriginXTwips: Long = 0L,
+    val renderOriginYTwips: Long = 0L
 )
 
 class DocuFlowViewModel(application: Application) : AndroidViewModel(application) {
@@ -67,15 +69,30 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
     private var viewportWidthPx = 1080
     private var viewportHeightPx = 1200
     private var twipsPerPixel = 12.0
+    private var cacheWidthPx = 1080
+    private var cacheHeightPx = 1200
+    private var renderGeneration = 0L
 
-    fun zoomIn() { twipsPerPixel = max(5.0, twipsPerPixel * 0.85); refreshViewport() }
+    private fun cacheWidth() = max(viewportWidthPx, (viewportWidthPx * 1.75f).toInt())
+    private fun cacheHeight() = max(viewportHeightPx, (viewportHeightPx * 1.75f).toInt())
 
-    fun zoomOut() { twipsPerPixel = min(30.0, twipsPerPixel * 1.18); refreshViewport() }
+    fun zoomIn() {
+        twipsPerPixel = max(5.0, twipsPerPixel * 0.85)
+        refreshViewport(force = true)
+    }
+
+    fun zoomOut() {
+        twipsPerPixel = min(30.0, twipsPerPixel * 1.18)
+        refreshViewport(force = true)
+    }
 
     fun setViewportSize(width: Int, height: Int) {
-        if (width > 0) viewportWidthPx = width
-        if (height > 0) viewportHeightPx = height
-        if (_state.value.documentOpen) refreshViewport()
+        val changed = width > 0 && height > 0 &&
+            (width != viewportWidthPx || height != viewportHeightPx)
+        if (!changed) return
+        viewportWidthPx = width
+        viewportHeightPx = height
+        if (_state.value.documentOpen) refreshViewport(force = true)
     }
 
     fun open(activity: Activity, uri: Uri) {
@@ -92,14 +109,15 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
                     documentWidthTwips = size.getOrElse(0) { 0L },
                     documentHeightTwips = size.getOrElse(1) { 0L },
                     viewportXTwips = 0L,
-                    viewportYTwips = 0L
+                    viewportYTwips = 0L,
+                    renderOriginXTwips = 0L,
+                    renderOriginYTwips = 0L
                 )
-                val preview = engine.renderViewport(viewportWidthPx, viewportHeightPx, 0L, 0L, twipsPerPixel)
+                renderCache(0L, 0L)
                 _state.value = _state.value.copy(
                     status = "Document opened — edit mode",
                     isBusy = false,
-                    documentOpen = true,
-                    preview = preview
+                    documentOpen = true
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -110,31 +128,94 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private fun refreshViewport() {
-        if (_state.value.isBusy || !_state.value.documentOpen) return
+    private fun cacheContains(x: Long, y: Long): Boolean {
+        val s = _state.value
+        val visibleW = (viewportWidthPx * twipsPerPixel).toLong()
+        val visibleH = (viewportHeightPx * twipsPerPixel).toLong()
+        val left = s.renderOriginXTwips
+        val top = s.renderOriginYTwips
+        val right = left + (cacheWidthPx * twipsPerPixel).toLong()
+        val bottom = top + (cacheHeightPx * twipsPerPixel).toLong()
+        val marginX = max(1L, visibleW / 4L)
+        val marginY = max(1L, visibleH / 4L)
+        return x >= left + marginX &&
+            y >= top + marginY &&
+            x + visibleW <= right - marginX &&
+            y + visibleH <= bottom - marginY
+    }
+
+    private suspend fun renderCacheAt(requestX: Long, requestY: Long) {
+        val s = _state.value
+        val maxX = max(0L, s.documentWidthTwips - (viewportWidthPx * twipsPerPixel).toLong())
+        val maxY = max(0L, s.documentHeightTwips - (viewportHeightPx * twipsPerPixel).toLong())
+        val x = min(max(0L, requestX), maxX)
+        val y = min(max(0L, requestY), maxY)
+
+        cacheWidthPx = cacheWidth()
+        cacheHeightPx = cacheHeight()
+
+        val maxCacheX = max(0L, s.documentWidthTwips - (cacheWidthPx * twipsPerPixel).toLong())
+        val maxCacheY = max(0L, s.documentHeightTwips - (cacheHeightPx * twipsPerPixel).toLong())
+        val originX = min(x, maxCacheX)
+        val originY = min(y, maxCacheY)
+
+        val generation = ++renderGeneration
+        val bitmap = engine.renderViewport(
+            cacheWidthPx, cacheHeightPx,
+            originX, originY, twipsPerPixel
+        )
+        if (generation != renderGeneration) return
+
+        _state.value = _state.value.copy(
+            viewportXTwips = x,
+            viewportYTwips = y,
+            renderOriginXTwips = originX,
+            renderOriginYTwips = originY,
+            preview = bitmap
+        )
+    }
+
+    private fun renderCache(requestX: Long, requestY: Long) {
         viewModelScope.launch {
-            try {
-                val s = _state.value
-                val maxX = max(0L, s.documentWidthTwips - (viewportWidthPx * twipsPerPixel).toLong())
-                val maxY = max(0L, s.documentHeightTwips - (viewportHeightPx * twipsPerPixel).toLong())
-                val x = min(max(0L, s.viewportXTwips), maxX)
-                val y = min(max(0L, s.viewportYTwips), maxY)
-                val bitmap = engine.renderViewport(viewportWidthPx, viewportHeightPx, x, y, twipsPerPixel)
-                _state.value = _state.value.copy(viewportXTwips = x, viewportYTwips = y, preview = bitmap)
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(status = "Render failed: " + (e.message ?: e.javaClass.simpleName))
-            }
+            runCatching { renderCacheAt(requestX, requestY) }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        status = "Render failed: " + (e.message ?: e.javaClass.simpleName)
+                    )
+                }
         }
+    }
+
+    private fun refreshViewport(force: Boolean = false) {
+        if (_state.value.isBusy || !_state.value.documentOpen) return
+        val s = _state.value
+        val maxX = max(0L, s.documentWidthTwips - (viewportWidthPx * twipsPerPixel).toLong())
+        val maxY = max(0L, s.documentHeightTwips - (viewportHeightPx * twipsPerPixel).toLong())
+        val x = min(max(0L, s.viewportXTwips), maxX)
+        val y = min(max(0L, s.viewportYTwips), maxY)
+
+        if (!force && cacheContains(x, y)) {
+            _state.value = s.copy(viewportXTwips = x, viewportYTwips = y)
+            return
+        }
+        renderCache(x, y)
     }
 
     fun panBy(dxPx: Float, dyPx: Float) {
         if (!_state.value.documentOpen) return
         val s = _state.value
-        _state.value = s.copy(
-            viewportXTwips = max(0L, s.viewportXTwips + (dxPx * twipsPerPixel).toLong()),
-            viewportYTwips = max(0L, s.viewportYTwips + (dyPx * twipsPerPixel).toLong())
-        )
-        refreshViewport()
+        val x = max(0L, s.viewportXTwips + (dxPx * twipsPerPixel).toLong())
+        val y = max(0L, s.viewportYTwips + (dyPx * twipsPerPixel).toLong())
+        val maxX = max(0L, s.documentWidthTwips - (viewportWidthPx * twipsPerPixel).toLong())
+        val maxY = max(0L, s.documentHeightTwips - (viewportHeightPx * twipsPerPixel).toLong())
+        val nx = min(x, maxX)
+        val ny = min(y, maxY)
+
+        if (cacheContains(nx, ny)) {
+            _state.value = s.copy(viewportXTwips = nx, viewportYTwips = ny)
+        } else {
+            renderCache(nx, ny)
+        }
     }
 
     fun tapDocument(xPx: Float, yPx: Float, clickCount: Int = 1) {
@@ -145,28 +226,37 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
             val y = s.viewportYTwips + (yPx * twipsPerPixel).toLong()
             engine.postMouse(0, x.toInt(), y.toInt(), clickCount)
             engine.postMouse(1, x.toInt(), y.toInt(), clickCount)
-            refreshViewport()
+            refreshViewport(force = true)
         }
     }
 
     fun insertText(text: String) {
         if (!_state.value.documentOpen || text.isEmpty()) return
         viewModelScope.launch {
-            runCatching { engine.postText(text); refreshViewport() }
+            runCatching {
+                engine.postText(text)
+                refreshViewport(force = true)
+            }
         }
     }
 
     fun deleteBackward() {
         if (!_state.value.documentOpen) return
         viewModelScope.launch {
-            runCatching { engine.command(".uno:Delete"); refreshViewport() }
+            runCatching {
+                engine.command(".uno:Delete")
+                refreshViewport(force = true)
+            }
         }
     }
 
     fun executeCommand(command: String) {
         if (!_state.value.documentOpen) return
         viewModelScope.launch {
-            runCatching { engine.command(command); refreshViewport() }
+            runCatching {
+                engine.command(command)
+                refreshViewport(force = true)
+            }
         }
     }
 

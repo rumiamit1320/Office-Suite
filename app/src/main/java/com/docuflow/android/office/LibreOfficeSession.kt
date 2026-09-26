@@ -3,12 +3,10 @@ package com.docuflow.android.office
 import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
-import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.File
 import java.nio.ByteBuffer
-import java.io.IOException
 import org.libreoffice.kit.LibreOfficeKit
 
 class LibreOfficeSession(private val context: Context) : DocumentSession {
@@ -33,9 +31,7 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
         val metadata = queryDocumentMetadata(uri)
         val file = copyUriToWorkingFile(uri, metadata.displayName, metadata.mimeType)
         try {
-            check(NativeLibreOffice.open(file.toURI().toString())) {
-                "LibreOfficeKit could not open " + file.name
-            }
+            check(NativeLibreOffice.open(file.toURI().toString())) { "LibreOfficeKit could not open " + file.name }
         } catch (t: Throwable) {
             file.delete()
             throw t
@@ -45,44 +41,47 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
         sourceExtension = file.extension.lowercase()
     }
 
-    suspend fun renderPreview(width: Int, height: Int): Bitmap {
-        val bytes = NativeLibreOffice.render(width, height)
-            ?: error("LibreOfficeKit returned no rendered tile")
-        require(bytes.size == width * height * 4) {
-            "Unexpected rendered buffer size: ${bytes.size}"
-        }
+    suspend fun documentSize(): LongArray = NativeLibreOffice.getDocumentSize() ?: longArrayOf(0L, 0L)
+
+    suspend fun renderViewport(width: Int, height: Int, xTwips: Long, yTwips: Long, twipsPerPixel: Double): Bitmap {
+        val bytes = NativeLibreOffice.renderViewport(width, height, xTwips, yTwips, twipsPerPixel)
+            ?: error("LibreOfficeKit returned no rendered viewport")
+        require(bytes.size == width * height * 4) { "Unexpected rendered buffer size: " + bytes.size }
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(bytes))
         return bitmap
     }
 
+    suspend fun postMouse(type: Int, xTwips: Int, yTwips: Int, count: Int = 1) =
+        NativeLibreOffice.postMouse(type, xTwips, yTwips, count)
+
+    suspend fun postText(text: String) {
+        if (text.isNotEmpty()) NativeLibreOffice.postText(text)
+    }
+
+    suspend fun command(command: String) = NativeLibreOffice.command(command)
+
     override suspend fun save() {
         val file = openedFile ?: error("No document is open")
         val uri = sourceUri ?: error("No source URI is associated with the document")
         val format = filterForExtension(sourceExtension)
+        check(NativeLibreOffice.saveAs(file.toURI().toString(), format)) { "LibreOfficeKit save failed" }
 
-        check(NativeLibreOffice.saveAs(file.toURI().toString(), format)) {
-            "LibreOfficeKit save failed"
-        }
-
-        // SAF providers generally truncate the target before returning an output
-        // stream. Keep a cache backup so a failed copy can restore the original.
         val backup = File.createTempFile("docuflow-save-", ".bak", context.cacheDir)
         try {
             context.contentResolver.openInputStream(uri).use { input ->
-                requireNotNull(input) { "Unable to read original document for backup: $uri" }
+                requireNotNull(input) { "Unable to read original document for backup: " + uri }
                 backup.outputStream().use { output -> input.copyTo(output) }
             }
-
             try {
                 context.contentResolver.openOutputStream(uri, "wt").use { output ->
-                    requireNotNull(output) { "Unable to open destination URI for writing: $uri" }
+                    requireNotNull(output) { "Unable to open destination URI for writing: " + uri }
                     file.inputStream().use { input -> input.copyTo(output) }
                 }
             } catch (writeFailure: Throwable) {
                 runCatching {
                     context.contentResolver.openOutputStream(uri, "wt").use { output ->
-                        requireNotNull(output) { "Unable to restore destination URI: $uri" }
+                        requireNotNull(output) { "Unable to restore destination URI: " + uri }
                         backup.inputStream().use { input -> input.copyTo(output) }
                     }
                 }
@@ -103,8 +102,7 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
             runCatching {
                 context.contentResolver.releasePersistableUriPermission(
                     uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
             }
         }
@@ -112,46 +110,28 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
         sourceExtension = ""
     }
 
-    private data class DocumentMetadata(
-        val displayName: String?,
-        val mimeType: String?
-    )
+    private data class DocumentMetadata(val displayName: String?, val mimeType: String?)
 
     private fun queryDocumentMetadata(uri: Uri): DocumentMetadata {
         var displayName: String? = null
-        var mimeType: String? = context.contentResolver.getType(uri)
-        val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+        val mimeType = context.contentResolver.getType(uri)
         try {
-            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (cursor.moveToFirst() && nameIndex >= 0 && !cursor.isNull(nameIndex)) {
-                    displayName = cursor.getString(nameIndex)
-                }
+                if (cursor.moveToFirst() && nameIndex >= 0 && !cursor.isNull(nameIndex)) displayName = cursor.getString(nameIndex)
             }
-        } catch (_: Exception) {
-            // Some providers do not implement metadata queries; fall back below.
-        }
+        } catch (_: Exception) { }
         return DocumentMetadata(displayName, mimeType)
     }
 
-    private fun copyUriToWorkingFile(
-        uri: Uri,
-        displayName: String?,
-        mimeType: String?
-    ): File {
-        val fallbackName = uri.lastPathSegment
-            ?.substringAfterLast('/')
-            ?.takeIf { it.isNotBlank() }
-            ?: "document"
+    private fun copyUriToWorkingFile(uri: Uri, displayName: String?, mimeType: String?): File {
+        val fallbackName = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "document"
         val name = displayName?.takeIf { it.isNotBlank() } ?: fallbackName
         val extension = extensionFromName(name) ?: extensionFromMimeType(mimeType)
-        val safeName = "opened_" + System.currentTimeMillis() +
-            (extension?.let { ".$it" } ?: "")
-        val target = File(context.cacheDir, safeName)
-
+        val target = File(context.cacheDir, "opened_" + System.currentTimeMillis() + (extension?.let { "." + it } ?: ""))
         try {
             context.contentResolver.openInputStream(uri).use { input ->
-                requireNotNull(input) { "Unable to read document URI: $uri" }
+                requireNotNull(input) { "Unable to read document URI: " + uri }
                 target.outputStream().use { output -> input.copyTo(output) }
             }
         } catch (t: Throwable) {
@@ -207,7 +187,11 @@ object NativeLibreOffice {
     external fun isRuntimeAvailable(): Boolean
     external fun initialize(handle: java.nio.ByteBuffer): Boolean
     external fun open(uri: String): Boolean
-    external fun render(width: Int, height: Int): ByteArray?
+    external fun getDocumentSize(): LongArray?
+    external fun renderViewport(width: Int, height: Int, xTwips: Long, yTwips: Long, twipsPerPixel: Double): ByteArray?
+    external fun postMouse(type: Int, xTwips: Int, yTwips: Int, count: Int)
+    external fun postText(text: String)
+    external fun command(command: String)
     external fun saveAs(uri: String, format: String?): Boolean
     external fun close()
 }

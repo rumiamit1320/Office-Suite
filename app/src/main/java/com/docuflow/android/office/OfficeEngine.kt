@@ -286,7 +286,11 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
         if (_state.value.documentKind != DocumentKind.CALC) return
         viewModelScope.launch {
             runCatching {
-                tapDocument(xPx, yPx, 1)
+                val s = _state.value
+                val x = s.viewportXTwips + (xPx * twipsPerPixel).toLong()
+                val y = s.viewportYTwips + (yPx * twipsPerPixel).toLong()
+                engine.postMouse(0, x.toInt(), y.toInt(), 1)
+                engine.postMouse(1, x.toInt(), y.toInt(), 1)
                 engine.command(".uno:SelectRow")
                 refreshViewport(force = true)
             }
@@ -297,7 +301,11 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
         if (_state.value.documentKind != DocumentKind.CALC) return
         viewModelScope.launch {
             runCatching {
-                tapDocument(xPx, yPx, 1)
+                val s = _state.value
+                val x = s.viewportXTwips + (xPx * twipsPerPixel).toLong()
+                val y = s.viewportYTwips + (yPx * twipsPerPixel).toLong()
+                engine.postMouse(0, x.toInt(), y.toInt(), 1)
+                engine.postMouse(1, x.toInt(), y.toInt(), 1)
                 engine.command(".uno:SelectColumn")
                 refreshViewport(force = true)
             }

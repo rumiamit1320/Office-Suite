@@ -20,32 +20,25 @@ public final class LibreOfficeKit {
 
     public static synchronized boolean init(Activity activity) {
         if (initializeDone) return true;
-
         mgr = activity.getResources().getAssets();
         ApplicationInfo applicationInfo = activity.getApplicationInfo();
         String dataDir = applicationInfo.dataDir;
         String cacheDir = activity.getApplication().getCacheDir().getAbsolutePath();
         String apkFile = activity.getApplication().getPackageResourcePath();
-
         Log.i(LOGTAG, "Initializing LibreOfficeKit, dataDir=" + dataDir);
         redirectStdio(true);
-
         if (!initializeNative(dataDir, cacheDir, apkFile, mgr)) {
             Log.e(LOGTAG, "Initialize native failed");
             return false;
         }
-
         initializeDone = true;
         return true;
     }
 
-    static {
-        NativeLibLoader.load();
-    }
+    static { NativeLibLoader.load(); }
 
     private static final class NativeLibLoader {
         private static boolean done = false;
-
         static synchronized void load() {
             if (done) return;
             System.loadLibrary("nspr4");
@@ -53,6 +46,7 @@ public final class LibreOfficeKit {
             System.loadLibrary("plc4");
             System.loadLibrary("nssutil3");
             System.loadLibrary("freebl3");
+            System.loadLibrary("sqlite3");
             System.loadLibrary("softokn3");
             System.loadLibrary("nss3");
             System.loadLibrary("nssckbi");

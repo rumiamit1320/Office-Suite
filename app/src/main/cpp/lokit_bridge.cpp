@@ -5,7 +5,6 @@
 #include <algorithm>
 #define LOK_USE_UNSTABLE_API
 #include "LibreOfficeKit.h"
-#include "LibreOfficeKitEnums.h"
 
 #define LOG_TAG "DocuFlowLOKit"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -161,12 +160,12 @@ Java_com_docuflow_android_office_NativeLibreOffice_render(JNIEnv* env, jobject,
         static_cast<int>(std::min<long>(documentWidth, 0x7fffffffL)),
         static_cast<int>(std::min<long>(tileHeight, 0x7fffffffL)));
 
-    int tileMode = LOK_TILEMODE_BGRA;
+    int tileMode = 1;
     if (LIBREOFFICEKIT_DOCUMENT_HAS(gDocument, getTileMode) &&
         gDocument->pClass->getTileMode)
         tileMode = gDocument->pClass->getTileMode(gDocument);
 
-    if (tileMode == LOK_TILEMODE_RGBA) {
+    if (tileMode == 0) {
         for (size_t i = 0; i + 3 < pixels.size(); i += 4)
             std::swap(pixels[i], pixels[i + 2]);
     }

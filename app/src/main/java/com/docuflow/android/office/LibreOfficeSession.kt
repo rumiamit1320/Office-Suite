@@ -2,10 +2,12 @@ package com.docuflow.android.office
 
 import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
 import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.File
+import java.nio.ByteBuffer
 import java.io.IOException
 import org.libreoffice.kit.LibreOfficeKit
 

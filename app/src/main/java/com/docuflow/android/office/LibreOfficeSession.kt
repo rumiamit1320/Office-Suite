@@ -14,6 +14,14 @@ class LibreOfficeSession(private val context: Context) : DocumentSession {
     private var sourceUri: Uri? = null
     private var sourceExtension: String = ""
 
+    suspend fun documentKind(): DocumentKind = when (sourceExtension) {
+        "xls", "xlsx", "ods", "csv" -> DocumentKind.CALC
+        "doc", "docx", "odt", "rtf", "txt" -> DocumentKind.WRITER
+        "ppt", "pptx", "odp" -> DocumentKind.IMPRESS
+        "pdf" -> DocumentKind.PDF
+        else -> DocumentKind.OTHER
+    }
+
     suspend fun initialize(activity: Activity): Boolean {
         if (!LibreOfficeKit.init(activity)) return false
         val handle = LibreOfficeKit.getLibreOfficeKitHandle()

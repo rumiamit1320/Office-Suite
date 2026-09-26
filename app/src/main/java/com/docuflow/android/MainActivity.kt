@@ -246,13 +246,13 @@ private class DocumentEditorView(
                     if (calcMode) {
                         when {
                             event.x < rowHeaderPx && event.y < colHeaderPx -> {
-                                onSelectRow(rowHeaderPx + 8f, colHeaderPx + 8f)
+                                onSelectRow(8f, 8f)
                             }
                             event.y < colHeaderPx -> {
-                                onSelectColumn(event.x.coerceAtLeast(rowHeaderPx + 1f), colHeaderPx + 8f)
+                                onSelectColumn((event.x - rowHeaderPx).coerceAtLeast(1f), 8f)
                             }
                             event.x < rowHeaderPx -> {
-                                onSelectRow(rowHeaderPx + 8f, event.y.coerceAtLeast(colHeaderPx + 1f))
+                                onSelectRow(8f, (event.y - colHeaderPx).coerceAtLeast(1f))
                             }
                             else -> {
                                 onTap(event.x - rowHeaderPx, event.y - colHeaderPx, count)

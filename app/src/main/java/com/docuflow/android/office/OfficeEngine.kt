@@ -31,6 +31,9 @@ class OfficeEngine(context: Context) {
     suspend fun documentSize(): LongArray =
         withContext(NativeOfficeDispatcher.dispatcher) { session.documentSize() }
 
+    suspend fun documentKind(): DocumentKind =
+        withContext(NativeOfficeDispatcher.dispatcher) { session.documentKind() }
+
     suspend fun renderViewport(width: Int, height: Int, x: Long, y: Long, scale: Double): Bitmap =
         withContext(NativeOfficeDispatcher.dispatcher) { session.renderViewport(width, height, x, y, scale) }
 
@@ -48,10 +51,20 @@ class OfficeEngine(context: Context) {
     suspend fun close() = withContext(NativeOfficeDispatcher.dispatcher) { session.close() }
 }
 
+enum class DocumentKind {
+    CALC,
+    WRITER,
+    IMPRESS,
+    PDF,
+    OTHER
+}
+
 data class DocuFlowUiState(
     val status: String = "Ready",
     val isBusy: Boolean = false,
     val documentOpen: Boolean = false,
+    val documentKind: DocumentKind = DocumentKind.OTHER,
+    val documentName: String = "",
     val preview: Bitmap? = null,
     val documentWidthTwips: Long = 0L,
     val documentHeightTwips: Long = 0L,
@@ -106,9 +119,13 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
                 check(engine.initialize(activity)) { "LibreOfficeKit runtime is not available" }
                 _state.value = _state.value.copy(status = "Opening document…")
                 engine.open(uri)
+                val kind = engine.documentKind()
                 val size = engine.documentSize()
+                val displayName = uri.lastPathSegment?.substringAfterLast('/') ?: "Document"
                 _state.value = _state.value.copy(
                     status = "Rendering document…",
+                    documentKind = kind,
+                    documentName = displayName,
                     documentWidthTwips = size.getOrElse(0) { 0L },
                     documentHeightTwips = size.getOrElse(1) { 0L },
                     viewportXTwips = 0L,
@@ -256,6 +273,32 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             runCatching {
                 engine.command(command)
+                refreshViewport(force = true)
+            }
+        }
+    }
+
+    fun selectCell(xPx: Float, yPx: Float) {
+        tapDocument(xPx, yPx, 1)
+    }
+
+    fun selectRow(xPx: Float, yPx: Float) {
+        if (_state.value.documentKind != DocumentKind.CALC) return
+        viewModelScope.launch {
+            runCatching {
+                tapDocument(xPx, yPx, 1)
+                engine.command(".uno:SelectRow")
+                refreshViewport(force = true)
+            }
+        }
+    }
+
+    fun selectColumn(xPx: Float, yPx: Float) {
+        if (_state.value.documentKind != DocumentKind.CALC) return
+        viewModelScope.launch {
+            runCatching {
+                tapDocument(xPx, yPx, 1)
+                engine.command(".uno:SelectColumn")
                 refreshViewport(force = true)
             }
         }

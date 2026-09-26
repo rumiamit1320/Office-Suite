@@ -54,6 +54,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -283,58 +284,102 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
-                Text(
-                    "DocuFlow tools",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(20.dp)
-                )
-                HorizontalDivider()
-                Text("Formatting", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp))
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    formattingActions.forEach { action ->
-                        NavigationDrawerItem(
-                            label = { Text(action.label) },
-                            selected = false,
-                            onClick = {
-                                viewModel.executeCommand(action.command)
-                                scope.launch { drawerState.close() }
-                            },
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                        )
+            ModalDrawerSheet(
+                drawerTonalElevation = 4.dp,
+                modifier = Modifier.width(320.dp)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(18.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.padding(10.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("DocuFlow", style = MaterialTheme.typography.titleLarge)
+                            Text("Office tools", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    Text("Data", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 18.dp, 16.dp, 8.dp))
-                    dataActions.forEach { action ->
-                        NavigationDrawerItem(
-                            label = { Text(action.label) },
-                            selected = false,
-                            onClick = {
-                                viewModel.executeCommand(action.command)
-                                scope.launch { drawerState.close() }
-                            },
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                        )
+                    HorizontalDivider()
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        item {
+                            Text("Formatting", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(16.dp, 10.dp, 16.dp, 6.dp))
+                        }
+                        items(formattingActions, key = { it.label }) { action ->
+                            NavigationDrawerItem(
+                                icon = { action.icon?.let { Icon(it, null) } },
+                                label = { Text(action.label) },
+                                selected = false,
+                                onClick = {
+                                    viewModel.executeCommand(action.command)
+                                    scope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        item {
+                            Text("Data", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(16.dp, 18.dp, 16.dp, 6.dp))
+                        }
+                        items(dataActions, key = { it.label }) { action ->
+                            NavigationDrawerItem(
+                                icon = { action.icon?.let { Icon(it, null) } },
+                                label = { Text(action.label) },
+                                selected = false,
+                                onClick = {
+                                    viewModel.executeCommand(action.command)
+                                    scope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        item {
+                            Text("Document", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(16.dp, 18.dp, 16.dp, 6.dp))
+                        }
+                        item {
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Default.Save, null) },
+                                label = { Text("Save") },
+                                selected = false,
+                                onClick = {
+                                    viewModel.save()
+                                    scope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        item {
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Default.Close, null) },
+                                label = { Text("Close document") },
+                                selected = false,
+                                onClick = {
+                                    viewModel.close()
+                                    scope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
-                    Text("Document", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 18.dp, 16.dp, 8.dp))
-                    NavigationDrawerItem(
-                        label = { Text("Save") },
-                        selected = false,
-                        onClick = {
-                            viewModel.save()
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                    NavigationDrawerItem(
-                        label = { Text("Close document") },
-                        selected = false,
-                        onClick = {
-                            viewModel.close()
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                    Spacer(Modifier.height(24.dp))
                 }
             }
         }
@@ -343,20 +388,67 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text("DocuFlow") },
+                        title = {
+                            Column {
+                                Text("DocuFlow", style = MaterialTheme.typography.titleLarge)
+                                if (uiState.documentOpen) {
+                                    Text("Editing document",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        },
                         navigationIcon = {
                             if (uiState.documentOpen) {
                                 IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                    Icon(Icons.Default.Menu, contentDescription = "Tools")
+                                    Icon(Icons.Default.Menu, "Tools")
                                 }
                             }
                         },
                         actions = {
                             if (uiState.documentOpen) {
-                                TextButton(onClick = viewModel::save, enabled = !uiState.isBusy) { Text("Save") }
+                                IconButton(onClick = viewModel::save, enabled = !uiState.isBusy) {
+                                    Icon(Icons.Default.Save, "Save")
+                                }
                             }
                         }
                     )
+                },
+                bottomBar = {
+                    if (uiState.documentOpen) {
+                        Surface(
+                            tonalElevation = 3.dp,
+                            shadowElevation = 2.dp
+                        ) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 3.dp)
+                            ) {
+                                items(
+                                    listOf(
+                                        EditorAction("Copy", ".uno:Copy", Icons.Default.ContentCopy),
+                                        EditorAction("Cut", ".uno:Cut", Icons.Default.ContentCut),
+                                        EditorAction("Paste", ".uno:Paste", Icons.Default.ContentPaste),
+                                        EditorAction("Filter", ".uno:DataFilterAutoFilter", Icons.Default.FilterAlt),
+                                        EditorAction("Sort", ".uno:DataSort", Icons.Default.Sort),
+                                        EditorAction("Merge", ".uno:MergeCells", Icons.Default.MergeType),
+                                        EditorAction("Border", ".uno:BorderDialog", Icons.Default.BorderAll)
+                                    ),
+                                    key = { it.label }
+                                ) { action ->
+                                    IconButton(onClick = { viewModel.executeCommand(action.command) }) {
+                                        Icon(action.icon!!, action.label)
+                                    }
+                                }
+                                item {
+                                    IconButton(onClick = viewModel::close) {
+                                        Icon(Icons.Default.Close, "Close")
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             ) { padding ->
                 Column(
@@ -364,90 +456,94 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     if (!uiState.documentOpen) {
-                        Spacer(Modifier.height(40.dp))
-                        Icon(Icons.Default.FolderOpen, "Open document", Modifier.size(72.dp))
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(56.dp))
+                        Icon(Icons.Default.FolderOpen, null,
+                            Modifier.size(72.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(18.dp))
                         Text("Office Suite", style = MaterialTheme.typography.headlineMedium)
-                        Text("Word • Excel • PowerPoint • PDF")
-                        Spacer(Modifier.height(24.dp))
-                        Button(enabled = !uiState.isBusy, onClick = { picker.launch(arrayOf("*/*")) }) {
+                        Text("Word • Excel • PowerPoint • PDF",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(28.dp))
+                        FilledTonalButton(
+                            enabled = !uiState.isBusy,
+                            onClick = { picker.launch(arrayOf("*/*")) }
+                        ) {
+                            Icon(Icons.Default.FolderOpen, null)
+                            Spacer(Modifier.width(8.dp))
                             Text(if (uiState.isBusy) "Working…" else "Open document")
                         }
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(18.dp))
                         Text(uiState.status)
                     } else {
-                        // Compact, frequently used controls stay visible above the document.
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            tonalElevation = 1.dp,
+                            color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
-                            frequentTop.forEach { action ->
-                                TextButton(
-                                    onClick = { viewModel.executeCommand(action.command) },
-                                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)
-                                ) { Text(action.label) }
-                            }
-                            TextButton(onClick = viewModel::zoomOut, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) { Text("−") }
-                            TextButton(onClick = viewModel::zoomIn, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) { Text("+") }
-                        }
-
-                        Text(
-                            uiState.status,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelMedium
-                        )
-
-                        AndroidView(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                            factory = { context ->
-                                DocumentEditorView(
-                                    context = context,
-                                    onTap = viewModel::tapDocument,
-                                    onPan = viewModel::panBy,
-                                    onText = viewModel::insertText,
-                                    onDelete = viewModel::deleteBackward
-                                )
-                            },
-                            update = { view ->
-                                view.setFrame(uiState.preview, uiState.viewportXTwips, uiState.viewportYTwips, uiState.renderOriginXTwips, uiState.renderOriginYTwips, 12.0)
-                                view.post {
-                                    if (view.width > 0 && view.height > 0) {
-                                        viewModel.setViewportSize(view.width, view.height)
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Edit", style = MaterialTheme.typography.labelLarge)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(uiState.status,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1)
+                                }
+                                Row {
+                                    IconButton(onClick = viewModel::zoomOut) {
+                                        Icon(Icons.Default.ZoomOut, "Zoom out")
+                                    }
+                                    IconButton(onClick = viewModel::zoomIn) {
+                                        Icon(Icons.Default.ZoomIn, "Zoom in")
                                     }
                                 }
                             }
-                        )
+                        }
 
-                        // The same high-frequency actions are available below the sheet so
-                        // users do not need to reach to the top while working.
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            contentPadding = PaddingValues(horizontal = 2.dp)
                         ) {
-                            listOf(
-                                EditorAction("Copy", ".uno:Copy"),
-                                EditorAction("Cut", ".uno:Cut"),
-                                EditorAction("Paste", ".uno:Paste"),
-                                EditorAction("Filter", ".uno:DataFilterAutoFilter"),
-                                EditorAction("Sort", ".uno:DataSort"),
-                                EditorAction("Merge", ".uno:MergeCells"),
-                                EditorAction("Border", ".uno:BorderDialog")
-                            ).forEach { action ->
-                                OutlinedButton(
+                            items(frequentTop, key = { it.label }) { action ->
+                                FilledTonalIconButton(
                                     onClick = { viewModel.executeCommand(action.command) },
-                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 2.dp)
-                                ) { Text(action.label) }
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Icon(action.icon!!, action.label)
+                                }
                             }
                         }
 
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        Box(
+                            Modifier.fillMaxWidth().weight(1f).padding(horizontal = 3.dp, vertical = 2.dp)
                         ) {
-                            TextButton(onClick = { viewModel.executeCommand(".uno:AlignLeft") }) { Text("Left") }
-                            TextButton(onClick = { viewModel.executeCommand(".uno:AlignCenter") }) { Text("Center") }
-                            TextButton(onClick = { viewModel.executeCommand(".uno:AlignRight") }) { Text("Right") }
-                            TextButton(onClick = viewModel::close) { Text("Close") }
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize(),
+                                factory = { context ->
+                                    DocumentEditorView(
+                                        context = context,
+                                        onTap = viewModel::tapDocument,
+                                        onPan = viewModel::panBy,
+                                        onText = viewModel::insertText,
+                                        onDelete = viewModel::deleteBackward
+                                    )
+                                },
+                                update = { view ->
+                                    view.setFrame(
+                                        uiState.preview,
+                                        uiState.viewportXTwips,
+                                        uiState.viewportYTwips,
+                                        uiState.renderOriginXTwips,
+                                        uiState.renderOriginYTwips,
+                                        12.0
+                                    )
+                                }
+                            )
                         }
                     }
                 }

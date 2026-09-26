@@ -1,17 +1,18 @@
 package com.docuflow.android
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
-import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -21,6 +22,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.docuflow.android.office.DocuFlowViewModel
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     private val viewModel: DocuFlowViewModel by viewModels()
@@ -58,52 +62,72 @@ private class DocumentEditorView(
     private var bitmap: Bitmap? = null
     private var downX = 0f
     private var downY = 0f
-    private var lastX = 0f
-    private var lastY = 0f
+    private var dragOffsetX = 0f
+    private var dragOffsetY = 0f
     private var moved = false
+    private var lastTapTime = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
 
     init {
         isFocusable = true
         isFocusableInTouchMode = true
+        setLayerType(View.LAYER_TYPE_HARDWARE, null)
         setBackgroundColor(0xFFEFEFEF.toInt())
     }
 
     fun setBitmap(value: Bitmap?) {
         bitmap = value
+        dragOffsetX = 0f
+        dragOffsetY = 0f
         invalidate()
     }
 
     override fun onDraw(canvas: android.graphics.Canvas) {
         super.onDraw(canvas)
-        bitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+        bitmap?.let { canvas.drawBitmap(it, dragOffsetX, dragOffsetY, null) }
     }
 
-    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+    override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            android.view.MotionEvent.ACTION_DOWN -> {
+            MotionEvent.ACTION_DOWN -> {
                 requestFocus()
                 downX = event.x
                 downY = event.y
-                lastX = downX
-                lastY = downY
+                dragOffsetX = 0f
+                dragOffsetY = 0f
                 moved = false
                 return true
             }
-            android.view.MotionEvent.ACTION_MOVE -> {
-                val dx = event.x - lastX
-                val dy = event.y - lastY
-                if (kotlin.math.abs(event.x - downX) > 8 || kotlin.math.abs(event.y - downY) > 8) moved = true
-                lastX = event.x
-                lastY = event.y
-                if (moved) onPan(-dx, -dy)
+
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.x - downX
+                val dy = event.y - downY
+                if (abs(dx) > 8f || abs(dy) > 8f) moved = true
+                if (moved) {
+                    dragOffsetX = dx
+                    dragOffsetY = dy
+                    invalidate()
+                }
                 return true
             }
-            android.view.MotionEvent.ACTION_UP -> {
-                if (!moved) {
-                    val count = event.eventTime.let { t ->
-                        if (t - downY.toLong() < 350) 1 else 1
-                    }
+
+            MotionEvent.ACTION_UP -> {
+                if (moved) {
+                    // Commit the final viewport only once. During the gesture the existing
+                    // bitmap is translated locally, avoiding a LibreOffice render per MOVE.
+                    onPan(-dragOffsetX, -dragOffsetY)
+                } else {
+                    val now = event.eventTime
+                    val doubleTap = now - lastTapTime <= 350L &&
+                        abs(event.x - lastTapX) <= 48f &&
+                        abs(event.y - lastTapY) <= 48f
+                    val count = if (doubleTap) 2 else 1
+                    lastTapTime = now
+                    lastTapX = event.x
+                    lastTapY = event.y
                     onTap(event.x, event.y, count)
+
                     val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
                 }
@@ -150,11 +174,15 @@ private class DocumentEditorView(
     }
 }
 
+private data class EditorAction(val label: String, val command: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUri: Uri?) {
     val uiState by viewModel.state.collectAsState()
     var lastHandledUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
     fun openDocument(uri: Uri) {
         try {
@@ -181,86 +209,210 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
         }
     }
 
-    MaterialTheme {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("DocuFlow") },
-                    actions = {
-                        if (uiState.documentOpen) {
-                            TextButton(onClick = viewModel::save, enabled = !uiState.isBusy) { Text("Save") }
-                        }
-                    }
+    val frequentTop = listOf(
+        EditorAction("Undo", ".uno:Undo"),
+        EditorAction("Redo", ".uno:Redo"),
+        EditorAction("B", ".uno:Bold"),
+        EditorAction("I", ".uno:Italic"),
+        EditorAction("U", ".uno:Underline"),
+        EditorAction("Filter", ".uno:DataFilterAutoFilter"),
+        EditorAction("Sort", ".uno:DataSort"),
+        EditorAction("Merge", ".uno:MergeCells"),
+        EditorAction("Border", ".uno:BorderDialog")
+    )
+
+    val formattingActions = listOf(
+        EditorAction("Font", ".uno:FontDialog"),
+        EditorAction("Font size", ".uno:FontHeight"),
+        EditorAction("Font colour", ".uno:FontColor"),
+        EditorAction("Cell fill", ".uno:BackgroundColor"),
+        EditorAction("Borders", ".uno:BorderDialog"),
+        EditorAction("Merge cells", ".uno:MergeCells"),
+        EditorAction("Wrap text", ".uno:WrapText"),
+        EditorAction("Align left", ".uno:AlignLeft"),
+        EditorAction("Align center", ".uno:AlignCenter"),
+        EditorAction("Align right", ".uno:AlignRight")
+    )
+
+    val dataActions = listOf(
+        EditorAction("Filter / AutoFilter", ".uno:DataFilterAutoFilter"),
+        EditorAction("Sort", ".uno:DataSort"),
+        EditorAction("Clear filter", ".uno:DataFilterRemoveFilter"),
+        EditorAction("Insert row", ".uno:InsertRows"),
+        EditorAction("Delete row", ".uno:DeleteRows"),
+        EditorAction("Insert column", ".uno:InsertColumns"),
+        EditorAction("Delete column", ".uno:DeleteColumns")
+    )
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Text(
+                    "DocuFlow tools",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(20.dp)
                 )
-            }
-        ) { padding ->
-            Column(
-                Modifier.fillMaxSize().padding(padding),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                if (!uiState.documentOpen) {
-                    Spacer(Modifier.height(40.dp))
-                    Icon(Icons.Default.FolderOpen, "Open document", Modifier.size(72.dp))
-                    Spacer(Modifier.height(16.dp))
-                    Text("Office Suite", style = MaterialTheme.typography.headlineMedium)
-                    Text("Word • Excel • PowerPoint • PDF")
-                    Spacer(Modifier.height(24.dp))
-                    Button(enabled = !uiState.isBusy, onClick = { picker.launch(arrayOf("*/*")) }) {
-                        Text(if (uiState.isBusy) "Working…" else "Open document")
+                HorizontalDivider()
+                Text("Formatting", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 8.dp))
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    formattingActions.forEach { action ->
+                        NavigationDrawerItem(
+                            label = { Text(action.label) },
+                            selected = false,
+                            onClick = {
+                                viewModel.executeCommand(action.command)
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                        )
                     }
-                    Spacer(Modifier.height(16.dp))
-                    Text(uiState.status)
-                } else {
-                    Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        TextButton(onClick = { viewModel.executeCommand(".uno:Undo") }) { Text("Undo") }
-                        TextButton(onClick = { viewModel.executeCommand(".uno:Redo") }) { Text("Redo") }
-                        TextButton(onClick = { viewModel.executeCommand(".uno:Bold") }) { Text("B") }
-                        TextButton(onClick = { viewModel.executeCommand(".uno:Italic") }) { Text("I") }
-                        TextButton(onClick = { viewModel.executeCommand(".uno:Underline") }) { Text("U") }
-                        TextButton(onClick = { viewModel.executeCommand(".uno:AlignLeft") }) { Text("Left") }
-                        TextButton(onClick = { viewModel.executeCommand(".uno:AlignCenter") }) { Text("Center") }
-                        TextButton(onClick = { viewModel.executeCommand(".uno:AlignRight") }) { Text("Right") }
-                        TextButton(onClick = { viewModel.zoomOut() }) { Text("−") }
-                        TextButton(onClick = { viewModel.zoomIn() }) { Text("+") }
+                    Text("Data", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 18.dp, 16.dp, 8.dp))
+                    dataActions.forEach { action ->
+                        NavigationDrawerItem(
+                            label = { Text(action.label) },
+                            selected = false,
+                            onClick = {
+                                viewModel.executeCommand(action.command)
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                        )
                     }
-
-                    Text(
-                        uiState.status,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-
-                    AndroidView(
-                        modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp),
-                        factory = { context ->
-                            DocumentEditorView(
-                                context = context,
-                                onTap = viewModel::tapDocument,
-                                onPan = viewModel::panBy,
-                                onText = viewModel::insertText,
-                                onDelete = viewModel::deleteBackward
-                            )
+                    Text("Document", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 18.dp, 16.dp, 8.dp))
+                    NavigationDrawerItem(
+                        label = { Text("Save") },
+                        selected = false,
+                        onClick = {
+                            viewModel.save()
+                            scope.launch { drawerState.close() }
                         },
-                        update = { view ->
-                            view.setBitmap(uiState.preview)
-                            view.post {
-                                if (view.width > 0 && view.height > 0)
-                                    viewModel.setViewportSize(view.width, view.height)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("Close document") },
+                        selected = false,
+                        onClick = {
+                            viewModel.close()
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
+        }
+    ) {
+        MaterialTheme {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("DocuFlow") },
+                        navigationIcon = {
+                            if (uiState.documentOpen) {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Tools")
+                                }
+                            }
+                        },
+                        actions = {
+                            if (uiState.documentOpen) {
+                                TextButton(onClick = viewModel::save, enabled = !uiState.isBusy) { Text("Save") }
                             }
                         }
                     )
+                }
+            ) { padding ->
+                Column(
+                    Modifier.fillMaxSize().padding(padding),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (!uiState.documentOpen) {
+                        Spacer(Modifier.height(40.dp))
+                        Icon(Icons.Default.FolderOpen, "Open document", Modifier.size(72.dp))
+                        Spacer(Modifier.height(16.dp))
+                        Text("Office Suite", style = MaterialTheme.typography.headlineMedium)
+                        Text("Word • Excel • PowerPoint • PDF")
+                        Spacer(Modifier.height(24.dp))
+                        Button(enabled = !uiState.isBusy, onClick = { picker.launch(arrayOf("*/*")) }) {
+                            Text(if (uiState.isBusy) "Working…" else "Open document")
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text(uiState.status)
+                    } else {
+                        // Compact, frequently used controls stay visible above the document.
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            frequentTop.forEach { action ->
+                                TextButton(
+                                    onClick = { viewModel.executeCommand(action.command) },
+                                    contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)
+                                ) { Text(action.label) }
+                            }
+                            TextButton(onClick = viewModel::zoomOut, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) { Text("−") }
+                            TextButton(onClick = viewModel::zoomIn, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) { Text("+") }
+                        }
 
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        OutlinedButton(onClick = { viewModel.executeCommand(".uno:Copy") }) { Text("Copy") }
-                        OutlinedButton(onClick = { viewModel.executeCommand(".uno:Cut") }) { Text("Cut") }
-                        OutlinedButton(onClick = { viewModel.executeCommand(".uno:Paste") }) { Text("Paste") }
-                        OutlinedButton(onClick = viewModel::close) { Text("Close") }
+                        Text(
+                            uiState.status,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+
+                        AndroidView(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            factory = { context ->
+                                DocumentEditorView(
+                                    context = context,
+                                    onTap = viewModel::tapDocument,
+                                    onPan = viewModel::panBy,
+                                    onText = viewModel::insertText,
+                                    onDelete = viewModel::deleteBackward
+                                )
+                            },
+                            update = { view ->
+                                view.setBitmap(uiState.preview)
+                                view.post {
+                                    if (view.width > 0 && view.height > 0) {
+                                        viewModel.setViewportSize(view.width, view.height)
+                                    }
+                                }
+                            }
+                        )
+
+                        // The same high-frequency actions are available below the sheet so
+                        // users do not need to reach to the top while working.
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            listOf(
+                                EditorAction("Copy", ".uno:Copy"),
+                                EditorAction("Cut", ".uno:Cut"),
+                                EditorAction("Paste", ".uno:Paste"),
+                                EditorAction("Filter", ".uno:DataFilterAutoFilter"),
+                                EditorAction("Sort", ".uno:DataSort"),
+                                EditorAction("Merge", ".uno:MergeCells"),
+                                EditorAction("Border", ".uno:BorderDialog")
+                            ).forEach { action ->
+                                OutlinedButton(
+                                    onClick = { viewModel.executeCommand(action.command) },
+                                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 2.dp)
+                                ) { Text(action.label) }
+                            }
+                        }
+
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            TextButton(onClick = { viewModel.executeCommand(".uno:AlignLeft") }) { Text("Left") }
+                            TextButton(onClick = { viewModel.executeCommand(".uno:AlignCenter") }) { Text("Center") }
+                            TextButton(onClick = { viewModel.executeCommand(".uno:AlignRight") }) { Text("Right") }
+                            TextButton(onClick = viewModel::close) { Text("Close") }
+                        }
                     }
                 }
             }

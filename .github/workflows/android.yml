@@ -89,23 +89,14 @@ jobs:
           fi
 
           while IFS= read -r so; do
-            bad_alignment="$("$READ_ELF" -lW "$so" | awk '$1=="LOAD" {print $NF}' | awk '
-              function hex2dec(v) { return strtonum(v) }
-              BEGIN { bad=0 }
-              {
-                v=$1
-                if (v ~ /^0x/) {
-                  n=strtonum(v)
-                  if (n < 0x4000) bad=1
-                }
-              }
-              END { print bad }
-            ')"
-            if [ "$bad_alignment" = "1" ]; then
-              echo "ERROR: 16 KiB alignment check failed: $so"
-              "$READ_ELF" -lW "$so" | grep ' LOAD ' || true
-              exit 1
-            fi
+            while IFS= read -r align; do
+              [ -n "$align" ] || continue
+              if [ "$((align))" -lt 16384 ]; then
+                echo "ERROR: 16 KiB alignment check failed: $so (LOAD align=$align)"
+                "$READ_ELF" -lW "$so" | grep ' LOAD ' || true
+                exit 1
+              fi
+            done < <("$READ_ELF" -lW "$so" | awk '$1=="LOAD" {print $NF}')
           done < <(find app/src/main/jniLibs -type f -name '*.so' -print)
 
           echo "16 KiB ELF alignment check passed."

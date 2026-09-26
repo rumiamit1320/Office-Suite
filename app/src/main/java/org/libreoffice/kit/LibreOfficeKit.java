@@ -27,12 +27,19 @@ public final class LibreOfficeKit {
         String apkFile = activity.getApplication().getPackageResourcePath();
         Log.i(LOGTAG, "Initializing LibreOfficeKit, dataDir=" + dataDir);
         redirectStdio(true);
-        if (!initializeNative(dataDir, cacheDir, apkFile, mgr)) {
-            Log.e(LOGTAG, "Initialize native failed");
+        try {
+            if (!initializeNative(dataDir, cacheDir, apkFile, mgr)) {
+                Log.e(LOGTAG, "Initialize native failed");
+                redirectStdio(false);
+                return false;
+            }
+            initializeDone = true;
+            return true;
+        } catch (Throwable t) {
+            Log.e(LOGTAG, "Initialize native threw", t);
+            redirectStdio(false);
             return false;
         }
-        initializeDone = true;
-        return true;
     }
 
     static { NativeLibLoader.load(); }

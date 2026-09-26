@@ -43,16 +43,13 @@ jobs:
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER"             "platform-tools"             "platforms;android-36"             "build-tools;35.0.0"             "cmake;4.1.2"             "ndk;27.2.12479018"
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0" "cmake;4.1.2" "ndk;27.2.12479018"
 
       - name: Prepare LibreOfficeKit Android runtime
         shell: bash
         run: |
           set -euo pipefail
 
-          # F-Droid's arm64-v8a LibreOffice Viewer build is a reproducible
-          # Android LibreOfficeKit runtime. We package its LibreOffice core
-          # and assets into DocuFlow rather than relying on another app.
           LO_APK_URL="https://f-droid.org/repo/org.documentfoundation.libreoffice_131.apk"
 
           rm -rf /tmp/libreoffice-runtime
@@ -70,14 +67,14 @@ jobs:
 
           test -s app/src/main/jniLibs/arm64-v8a/liblo-native-code.so
           test -d app/src/main/assets/program
+          test -d app/src/main/assets/unpack
+          test -s app/src/main/assets/unpack/program/udkapi.rdb
 
-          echo "LibreOfficeKit native runtime:"
-          ls -lh app/src/main/jniLibs/arm64-v8a/
+          echo "Verified Android LibreOfficeKit bootstrap payload:"
+          ls -lh app/src/main/assets/unpack/program/udkapi.rdb
           echo "LibreOffice runtime assets:"
           du -sh app/src/main/assets
 
-          # Android 15+ devices may use 16 KiB memory pages. Reject any bundled
-          # ELF shared object whose LOAD segment alignment is below 16 KiB.
           echo "Checking native libraries for 16 KiB ELF LOAD alignment..."
           if command -v llvm-readelf >/dev/null 2>&1; then
             READ_ELF="llvm-readelf"
@@ -107,6 +104,17 @@ jobs:
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
+
+      - name: Verify packaged LibreOffice bootstrap payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          unzip -l "$APK" | grep -E 'assets/(program|unpack)/' | head -n 20
+          unzip -l "$APK" | grep -q 'assets/unpack/program/udkapi.rdb'
+          unzip -l "$APK" | grep -q 'assets/program/fundamentalrc'
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/liblo-native-code.so'
+          echo "APK contains required LibreOffice bootstrap payload."
 
       - uses: actions/upload-artifact@v4
         with:

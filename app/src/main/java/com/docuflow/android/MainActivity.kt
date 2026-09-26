@@ -59,6 +59,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.docuflow.android.office.DocuFlowViewModel
+import com.docuflow.android.office.DocumentKind
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -84,7 +85,10 @@ private class DocumentEditorView(
     private val onTap: (Float, Float, Int) -> Unit,
     private val onPan: (Float, Float) -> Unit,
     private val onText: (String) -> Unit,
-    private val onDelete: () -> Unit
+    private val onDelete: () -> Unit,
+    private val calcMode: Boolean,
+    private val onSelectRow: (Float, Float) -> Unit,
+    private val onSelectColumn: (Float, Float) -> Unit
 ) : View(context) {
     private var bitmap: Bitmap? = null
     private var frameOffsetX = 0f
@@ -97,6 +101,11 @@ private class DocumentEditorView(
     private var lastTapTime = 0L
     private var lastTapX = 0f
     private var lastTapY = 0f
+    private var frameTwipsPerPixel = 12.0
+    private val rowHeaderPx = 56f
+    private val colHeaderPx = 28f
+    private val defaultColumnTwips = 1280L
+    private val defaultRowTwips = 256L
 
     init {
         isFocusable = true
@@ -112,6 +121,7 @@ private class DocumentEditorView(
         bitmap = value
         frameOffsetX = newOffsetX
         frameOffsetY = newOffsetY
+        frameTwipsPerPixel = twipsPerPixel
         dragOffsetX = 0f
         dragOffsetY = 0f
         if (changed) invalidate()
@@ -119,7 +129,71 @@ private class DocumentEditorView(
 
     override fun onDraw(canvas: android.graphics.Canvas) {
         super.onDraw(canvas)
-        bitmap?.let { canvas.drawBitmap(it, frameOffsetX + dragOffsetX, frameOffsetY + dragOffsetY, null) }
+        if (calcMode) {
+            canvas.save()
+            canvas.clipRect(rowHeaderPx, colHeaderPx, width.toFloat(), height.toFloat())
+            bitmap?.let {
+                canvas.drawBitmap(it, rowHeaderPx + frameOffsetX + dragOffsetX, colHeaderPx + frameOffsetY + dragOffsetY, null)
+            }
+            canvas.restore()
+            drawCalcHeaders(canvas)
+        } else {
+            bitmap?.let { canvas.drawBitmap(it, frameOffsetX + dragOffsetX, frameOffsetY + dragOffsetY, null) }
+        }
+    }
+
+    private fun drawCalcHeaders(canvas: android.graphics.Canvas) {
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.textSize = 13f * resources.displayMetrics.scaledDensity
+        paint.textAlign = android.graphics.Paint.Align.CENTER
+        paint.color = 0xFFE8EAED.toInt()
+        canvas.drawRect(0f, 0f, width.toFloat(), colHeaderPx, paint)
+        canvas.drawRect(0f, 0f, rowHeaderPx, height.toFloat(), paint)
+        paint.color = 0xFFD1D5DB.toInt()
+        canvas.drawRect(0f, colHeaderPx - 1f, width.toFloat(), colHeaderPx, paint)
+        canvas.drawRect(rowHeaderPx - 1f, 0f, rowHeaderPx, height.toFloat(), paint)
+
+        val columnPx = (defaultColumnTwips / frameTwipsPerPixel).toFloat()
+        val rowPx = (defaultRowTwips / frameTwipsPerPixel).toFloat()
+        val originX = rowHeaderPx + frameOffsetX + dragOffsetX
+        val originY = colHeaderPx + frameOffsetY + dragOffsetY
+        val firstCol = kotlin.math.max(0, kotlin.math.floor((-originX) / columnPx).toInt())
+        val firstRow = kotlin.math.max(0, kotlin.math.floor((-originY) / rowPx).toInt())
+        val lastCol = kotlin.math.ceil((width - rowHeaderPx - originX) / columnPx).toInt() + 1
+        val lastRow = kotlin.math.ceil((height - colHeaderPx - originY) / rowPx).toInt() + 1
+
+        paint.color = 0xFF202124.toInt()
+        for (c in firstCol..lastCol) {
+            val x0 = originX + c * columnPx
+            val x1 = x0 + columnPx
+            if (x1 < rowHeaderPx || x0 > width) continue
+            canvas.drawText(columnLabel(c), ((x0 + x1) / 2f).coerceIn(rowHeaderPx + 12f, width - 12f), colHeaderPx * 0.68f, paint)
+            paint.color = 0xFFD1D5DB.toInt()
+            canvas.drawLine(x1, 0f, x1, colHeaderPx, paint)
+            paint.color = 0xFF202124.toInt()
+        }
+        for (r in firstRow..lastRow) {
+            val y0 = originY + r * rowPx
+            val y1 = y0 + rowPx
+            if (y1 < colHeaderPx || y0 > height) continue
+            paint.color = 0xFF202124.toInt()
+            canvas.drawText((r + 1).toString(), rowHeaderPx * 0.5f, ((y0 + y1) / 2f) + paint.textSize * 0.35f, paint)
+            paint.color = 0xFFD1D5DB.toInt()
+            canvas.drawLine(0f, y1, rowHeaderPx, y1, paint)
+        }
+        paint.color = 0xFFE8EAED.toInt()
+        canvas.drawRect(0f, 0f, rowHeaderPx, colHeaderPx, paint)
+    }
+
+    private fun columnLabel(index: Int): String {
+        var n = index + 1
+        val sb = StringBuilder()
+        while (n > 0) {
+            val rem = (n - 1) % 26
+            sb.append(('A'.code + rem).toChar())
+            n = (n - 1) / 26
+        }
+        return sb.reverse().toString()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -169,9 +243,26 @@ private class DocumentEditorView(
                     lastTapTime = now
                     lastTapX = event.x
                     lastTapY = event.y
-                    onTap(event.x, event.y, count)
-                    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                    if (calcMode) {
+                        when {
+                            event.x < rowHeaderPx && event.y < colHeaderPx -> {
+                                onSelectRow(rowHeaderPx + 8f, colHeaderPx + 8f)
+                            }
+                            event.y < colHeaderPx -> {
+                                onSelectColumn(event.x.coerceAtLeast(rowHeaderPx + 1f), colHeaderPx + 8f)
+                            }
+                            event.x < rowHeaderPx -> {
+                                onSelectRow(rowHeaderPx + 8f, event.y.coerceAtLeast(colHeaderPx + 1f))
+                            }
+                            else -> {
+                                onTap(event.x - rowHeaderPx, event.y - colHeaderPx, count)
+                            }
+                        }
+                    } else {
+                        onTap(event.x, event.y, count)
+                        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                        imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                    }
                 }
                 performClick()
                 return true
@@ -392,7 +483,14 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                             Column {
                                 Text("DocuFlow", style = MaterialTheme.typography.titleLarge)
                                 if (uiState.documentOpen) {
-                                    Text("Editing document",
+                                    Text(
+                                        when (uiState.documentKind) {
+                                            DocumentKind.CALC -> "Spreadsheet"
+                                            DocumentKind.PDF -> "PDF viewer"
+                                            DocumentKind.WRITER -> "Document"
+                                            DocumentKind.IMPRESS -> "Presentation"
+                                            else -> "Document"
+                                        },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -406,7 +504,7 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                             }
                         },
                         actions = {
-                            if (uiState.documentOpen) {
+                            if (uiState.documentOpen && uiState.documentKind != DocumentKind.PDF) {
                                 IconButton(onClick = viewModel::save, enabled = !uiState.isBusy) {
                                     Icon(Icons.Default.Save, "Save")
                                 }
@@ -415,7 +513,7 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                     )
                 },
                 bottomBar = {
-                    if (uiState.documentOpen) {
+                    if (uiState.documentOpen && uiState.documentKind != DocumentKind.PDF) {
                         Surface(
                             tonalElevation = 3.dp,
                             shadowElevation = 2.dp
@@ -504,17 +602,25 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                             }
                         }
 
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            contentPadding = PaddingValues(horizontal = 2.dp)
-                        ) {
-                            items(frequentTop, key = { it.label }) { action ->
-                                FilledTonalIconButton(
-                                    onClick = { viewModel.executeCommand(action.command) },
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Icon(action.icon!!, action.label)
+                        if (uiState.documentKind != DocumentKind.PDF) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                contentPadding = PaddingValues(horizontal = 2.dp)
+                            ) {
+                                val actions = if (uiState.documentKind == DocumentKind.CALC) {
+                                    frequentTop + listOf(
+                                        EditorAction("Select row", ".uno:SelectRow", Icons.Default.FormatAlignLeft),
+                                        EditorAction("Select column", ".uno:SelectColumn", Icons.Default.FormatAlignCenter)
+                                    )
+                                } else frequentTop
+                                items(actions, key = { it.label }) { action ->
+                                    FilledTonalIconButton(
+                                        onClick = { viewModel.executeCommand(action.command) },
+                                        modifier = Modifier.size(44.dp)
+                                    ) {
+                                        Icon(action.icon!!, action.label)
+                                    }
                                 }
                             }
                         }
@@ -530,7 +636,10 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                                         onTap = viewModel::tapDocument,
                                         onPan = viewModel::panBy,
                                         onText = viewModel::insertText,
-                                        onDelete = viewModel::deleteBackward
+                                        onDelete = viewModel::deleteBackward,
+                                        calcMode = uiState.documentKind == DocumentKind.CALC,
+                                        onSelectRow = viewModel::selectRow,
+                                        onSelectColumn = viewModel::selectColumn
                                     )
                                 },
                                 update = { view ->
@@ -540,7 +649,7 @@ fun DocuFlowApp(activity: MainActivity, viewModel: DocuFlowViewModel, incomingUr
                                         uiState.viewportYTwips,
                                         uiState.renderOriginXTwips,
                                         uiState.renderOriginYTwips,
-                                        12.0
+                                        uiState.twipsPerPixel
                                     )
                                 }
                             )

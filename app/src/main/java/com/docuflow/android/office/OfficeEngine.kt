@@ -139,12 +139,10 @@ class DocuFlowViewModel(application: Application) : AndroidViewModel(application
         val top = s.renderOriginYTwips
         val right = left + (cacheWidthPx * twipsPerPixel).toLong()
         val bottom = top + (cacheHeightPx * twipsPerPixel).toLong()
-        val marginX = max(1L, visibleW / 4L)
-        val marginY = max(1L, visibleH / 4L)
-        return x >= left + marginX &&
-            y >= top + marginY &&
-            x + visibleW <= right - marginX &&
-            y + visibleH <= bottom - marginY
+        return x >= left &&
+            y >= top &&
+            x + visibleW <= right &&
+            y + visibleH <= bottom
     }
 
     private suspend fun renderCacheAt(requestX: Long, requestY: Long) {
